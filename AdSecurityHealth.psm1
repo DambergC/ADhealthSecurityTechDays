@@ -1191,37 +1191,75 @@ function Get-DCServiceStatus {
 #region 14. AD Database Size and Growth
 
 function Get-ADDatabaseStats {
+    <#
+    .SYNOPSIS
+        Retrieves Active Directory database size statistics.
+    
+    .DESCRIPTION
+        Queries the size of ntds.dit file on all domain controllers for
+        capacity planning and monitoring.
+    
+    .EXAMPLE
+        Get-ADDatabaseStats
+        Returns AD database size for all DCs.
+    #>
     [CmdletBinding()]
     param()
-    $dcs = Get-ADDomainController -Filter * | Select-Object -ExpandProperty HostName
-    $evidence = foreach ($dc in $dcs) {
-        try {
-            $path = Invoke-Command -ComputerName $dc -ScriptBlock {
-                (Get-Item 'C:\Windows\NTDS\ntds.dit' -ErrorAction Stop).FullName
-            } -ErrorAction Stop
-            $size = Invoke-Command -ComputerName $dc -ScriptBlock {
-                (Get-Item 'C:\Windows\NTDS\ntds.dit').Length
-            } -ErrorAction Stop
-            [pscustomobject]@{
-                DC        = $dc
-                NtdsDit   = $path
-                SizeBytes = $size
-                SizeMB    = [math]::Round($size/1MB,2)
-            }
-        } catch {
-            [pscustomobject]@{
-                DC        = $dc
-                NtdsDit   = 'Unknown'
-                SizeBytes = $null
-                SizeMB    = $null
+    
+    Write-ADSHVerbose "Starting AD database stats check"
+    
+    try {
+        Write-ADSHVerbose "Querying domain controllers"
+        $dcs = Get-ADDomainController -Filter * -ErrorAction Stop | Select-Object -ExpandProperty HostName
+        Write-ADSHVerbose "Found $($dcs.Count) domain controllers"
+        
+        $evidence = foreach ($dc in $dcs) {
+            Write-ADSHVerbose "Checking NTDS.dit size on: $dc"
+            try {
+                $path = Invoke-Command -ComputerName $dc -ScriptBlock {
+                    (Get-Item 'C:\Windows\NTDS\ntds.dit' -ErrorAction Stop).FullName
+                } -ErrorAction Stop
+                
+                $size = Invoke-Command -ComputerName $dc -ScriptBlock {
+                    (Get-Item 'C:\Windows\NTDS\ntds.dit' -ErrorAction Stop).Length
+                } -ErrorAction Stop
+                
+                Write-ADSHVerbose "DC $dc NTDS.dit size: $([math]::Round($size/1MB,2)) MB"
+                
+                [pscustomobject]@{
+                    DC        = $dc
+                    NtdsDit   = $path
+                    SizeBytes = $size
+                    SizeMB    = [math]::Round($size/1MB,2)
+                }
+            } catch {
+                Write-Warning "Failed to get database size from $dc`: $($_.Exception.Message)"
+                Write-ADSHVerbose "Error querying database on $dc`: $_"
+                
+                [pscustomobject]@{
+                    DC        = $dc
+                    NtdsDit   = 'Unknown'
+                    SizeBytes = $null
+                    SizeMB    = $null
+                }
             }
         }
+        
+        New-ADSHFinding -Category 'Capacity' -Id 'NTDS' -Severity 'Info' `
+            -Title "AD database (ntds.dit) size per DC" `
+            -Description "Track AD DB size for capacity planning; monitor sudden growth." `
+            -Evidence $evidence `
+            -Remediation "Ensure sufficient disk space and regular backups; defragment offline if required by Microsoft guidance."
+    } catch {
+        Write-Warning "Failed to check AD database stats: $($_.Exception.Message)"
+        Write-ADSHVerbose "Error checking database: $_"
+        
+        New-ADSHFinding -Category 'Capacity' -Id 'NTDS' -Severity 'Info' `
+            -Title "AD database stats check failed" `
+            -Description "Unable to query database statistics. Error: $($_.Exception.Message)" `
+            -Evidence $null `
+            -Remediation "Verify AD connectivity and permissions."
     }
-    New-ADSHFinding -Category 'Capacity' -Id 'NTDS' -Severity 'Info' `
-        -Title "AD database (ntds.dit) size per DC" `
-        -Description "Track AD DB size for capacity planning; monitor sudden growth." `
-        -Evidence $evidence `
-        -Remediation "Ensure sufficient disk space and regular backups; defragment offline if required by Microsoft guidance."
 }
 
 #endregion
@@ -1229,16 +1267,46 @@ function Get-ADDatabaseStats {
 #region 15. Trust Relationships
 
 function Get-TrustRelationships {
+    <#
+    .SYNOPSIS
+        Audits domain and forest trust relationships.
+    
+    .DESCRIPTION
+        Lists all trust relationships to identify potential security exposure points.
+        External and forest trusts require careful review.
+    
+    .EXAMPLE
+        Get-TrustRelationships
+        Returns findings about trust relationships.
+    #>
     [CmdletBinding()]
     param()
-    $trusts = Get-ADTrust -Filter * -Properties *
-    $evidence = $trusts | Select-Object Name, Source, Target, TrustType, TrustAttributes, Direction, IsForest, IsExternal
-    $sev = if ($trusts.Count -gt 0) { 'Medium' } else { 'Info' }
-    New-ADSHFinding -Category 'Exposure' -Id 'TRUSTS' -Severity $sev `
-        -Title "Domain and forest trust relationships" `
-        -Description "Review external and forest trusts; validate SID filtering and selective authentication." `
-        -Evidence $evidence `
-        -Remediation "Remove obsolete trusts; enable SID filtering; use selective authentication for external trusts."
+    
+    Write-ADSHVerbose "Starting trust relationships audit"
+    
+    try {
+        Write-ADSHVerbose "Querying AD trust relationships"
+        $trusts = Get-ADTrust -Filter * -Properties * -ErrorAction Stop
+        Write-ADSHVerbose "Found $($trusts.Count) trust relationships"
+        
+        $evidence = $trusts | Select-Object Name, Source, Target, TrustType, TrustAttributes, Direction, IsForest, IsExternal
+        $sev = if ($trusts.Count -gt 0) { 'Medium' } else { 'Info' }
+        
+        New-ADSHFinding -Category 'Exposure' -Id 'TRUSTS' -Severity $sev `
+            -Title "Domain and forest trust relationships" `
+            -Description "Review external and forest trusts; validate SID filtering and selective authentication." `
+            -Evidence $evidence `
+            -Remediation "Remove obsolete trusts; enable SID filtering; use selective authentication for external trusts."
+    } catch {
+        Write-Warning "Failed to query trust relationships: $($_.Exception.Message)"
+        Write-ADSHVerbose "Error querying trusts: $_"
+        
+        New-ADSHFinding -Category 'Exposure' -Id 'TRUSTS' -Severity 'Info' `
+            -Title "Trust relationships check failed" `
+            -Description "Unable to query trust relationships. Error: $($_.Exception.Message)" `
+            -Evidence $null `
+            -Remediation "Verify AD connectivity and permissions."
+    }
 }
 
 #endregion
@@ -1246,43 +1314,81 @@ function Get-TrustRelationships {
 #region 16. GPO Review (links, permissions)
 
 function Get-GPOReview {
+    <#
+    .SYNOPSIS
+        Reviews Group Policy Objects for orphaned GPOs and security issues.
+    
+    .DESCRIPTION
+        Analyzes all GPOs to identify those that are not linked (orphaned) and
+        reviews security filtering configurations.
+    
+    .EXAMPLE
+        Get-GPOReview
+        Returns findings about GPO configuration.
+    #>
     [CmdletBinding()]
     param()
-    # Requires GroupPolicy module
-    $all = Get-GPO -All -ErrorAction SilentlyContinue
-    $xmls = @()
-    foreach ($g in $all) {
-        try {
-            $temp = New-TemporaryFile
-            Get-GPOReport -Guid $g.Id -ReportType Xml -Path $temp.FullName
-            $xml = [xml](Get-Content -Raw $temp.FullName)
-            Remove-Item $temp.FullName -Force -ErrorAction SilentlyContinue
-            $xmls += [pscustomobject]@{
-                DisplayName = $g.DisplayName
-                Id          = $g.Id
-                CreationTime= $g.CreationTime
-                ModificationTime = $g.ModificationTime
-                LinksToCount= ($xml.GPO.LinksTo | Measure-Object).Count
-                SecurityFiltering = ($xml.GPO.SecurityDescriptor | Out-String)
-            }
-        } catch {
-            $xmls += [pscustomobject]@{
-                DisplayName = $g.DisplayName
-                Id          = $g.Id
-                CreationTime= $g.CreationTime
-                ModificationTime = $g.ModificationTime
-                LinksToCount= 0
-                SecurityFiltering = 'Report failed'
+    
+    Write-ADSHVerbose "Starting GPO review"
+    
+    try {
+        # Requires GroupPolicy module
+        Write-ADSHVerbose "Querying all GPOs"
+        $all = Get-GPO -All -ErrorAction Stop
+        Write-ADSHVerbose "Found $($all.Count) GPOs"
+        
+        $xmls = @()
+        foreach ($g in $all) {
+            Write-ADSHVerbose "Processing GPO: $($g.DisplayName)"
+            try {
+                $temp = New-TemporaryFile
+                Get-GPOReport -Guid $g.Id -ReportType Xml -Path $temp.FullName -ErrorAction Stop
+                $xml = [xml](Get-Content -Raw $temp.FullName)
+                Remove-Item $temp.FullName -Force -ErrorAction SilentlyContinue
+                
+                $xmls += [pscustomobject]@{
+                    DisplayName = $g.DisplayName
+                    Id          = $g.Id
+                    CreationTime= $g.CreationTime
+                    ModificationTime = $g.ModificationTime
+                    LinksToCount= ($xml.GPO.LinksTo | Measure-Object).Count
+                    SecurityFiltering = ($xml.GPO.SecurityDescriptor | Out-String)
+                }
+            } catch {
+                Write-Warning "Failed to get GPO report for $($g.DisplayName): $($_.Exception.Message)"
+                Write-ADSHVerbose "Error processing GPO $($g.DisplayName): $_"
+                
+                $xmls += [pscustomobject]@{
+                    DisplayName = $g.DisplayName
+                    Id          = $g.Id
+                    CreationTime= $g.CreationTime
+                    ModificationTime = $g.ModificationTime
+                    LinksToCount= 0
+                    SecurityFiltering = 'Report failed'
+                }
             }
         }
+        
+        $orphans = $xmls | Where-Object { $_.LinksToCount -eq 0 }
+        Write-ADSHVerbose "Found $($orphans.Count) orphaned GPOs"
+        
+        $sev = if ($orphans.Count -gt 0) { 'Medium' } else { 'Info' }
+        
+        New-ADSHFinding -Category 'Configuration' -Id 'GPO' -Severity $sev `
+            -Title "GPO review (orphaned and security filtering)" `
+            -Description "Identify orphaned GPOs and review security filtering for over-permission." `
+            -Evidence $xmls `
+            -Remediation "Delete or archive unused GPOs; tighten GPO permissions and links; document GPO ownership."
+    } catch {
+        Write-Warning "Failed to review GPOs: $($_.Exception.Message)"
+        Write-ADSHVerbose "Error reviewing GPOs: $_"
+        
+        New-ADSHFinding -Category 'Configuration' -Id 'GPO' -Severity 'Info' `
+            -Title "GPO review failed" `
+            -Description "Unable to query GPOs. Error: $($_.Exception.Message)" `
+            -Evidence $null `
+            -Remediation "Verify GroupPolicy module is installed and permissions are adequate."
     }
-    $orphans = $xmls | Where-Object { $_.LinksToCount -eq 0 }
-    $sev = if ($orphans.Count -gt 0) { 'Medium' } else { 'Info' }
-    New-ADSHFinding -Category 'Configuration' -Id 'GPO' -Severity $sev `
-        -Title "GPO review (orphaned and security filtering)" `
-        -Description "Identify orphaned GPOs and review security filtering for over-permission." `
-        -Evidence $xmls `
-        -Remediation "Delete or archive unused GPOs; tighten GPO permissions and links; document GPO ownership."
 }
 
 #endregion
@@ -1290,22 +1396,46 @@ function Get-GPOReview {
 #region 17. Pre-Windows 2000 Compatible Access Group
 
 function Get-PreWin2000AccessRisks {
+    <#
+    .SYNOPSIS
+        Audits Pre-Windows 2000 Compatible Access group membership.
+    
+    .DESCRIPTION
+        Checks membership of the Pre-Windows 2000 Compatible Access group,
+        which grants broad read access and should be empty in modern environments.
+    
+    .EXAMPLE
+        Get-PreWin2000AccessRisks
+        Returns findings about Pre-Windows 2000 Compatible Access group.
+    #>
     [CmdletBinding()]
     param()
+    
+    Write-ADSHVerbose "Starting Pre-Windows 2000 Compatible Access audit"
+    
     try {
+        Write-ADSHVerbose "Querying Pre-Windows 2000 Compatible Access group"
         $grp = Get-ADGroup -Identity 'Pre-Windows 2000 Compatible Access' -ErrorAction Stop
-        $members = Get-ADGroupMember -Identity $grp.DistinguishedName -Recursive -ErrorAction SilentlyContinue
+        Write-ADSHVerbose "Found group: $($grp.DistinguishedName)"
+        
+        $members = Get-ADGroupMember -Identity $grp.DistinguishedName -Recursive -ErrorAction Stop
+        Write-ADSHVerbose "Group has $($members.Count) members"
+        
         $evidence = $members | Select-Object Name, SamAccountName, ObjectClass, DistinguishedName
         $sev = if ($members.Count -gt 0) { 'Medium' } else { 'Info' }
+        
         New-ADSHFinding -Category 'Security' -Id 'PREWIN2000' -Severity $sev `
             -Title "Pre-Windows 2000 Compatible Access membership" `
             -Description "Membership here broadens read access; review for legacy needs only." `
             -Evidence $evidence `
             -Remediation "Remove unnecessary principals; ensure legacy apps are updated."
     } catch {
+        Write-Warning "Failed to query Pre-Windows 2000 Compatible Access group: $($_.Exception.Message)"
+        Write-ADSHVerbose "Error querying group: $_"
+        
         New-ADSHFinding -Category 'Security' -Id 'PREWIN2000' -Severity 'Info' `
             -Title "Pre-Windows 2000 Compatible Access group not found" `
-            -Description "Group may be renamed or domain-specific." `
+            -Description "Group may be renamed or domain-specific. Error: $($_.Exception.Message)" `
             -Evidence $null `
             -Remediation "Validate group existence."
     }
@@ -1316,32 +1446,68 @@ function Get-PreWin2000AccessRisks {
 #region 18. SPN Audit (duplicates & roasting risks)
 
 function Get-SPNAudit {
+    <#
+    .SYNOPSIS
+        Audits Service Principal Names (SPNs) for duplicates and roasting risks.
+    
+    .DESCRIPTION
+        Identifies duplicate SPNs which cause authentication conflicts, and SPNs
+        on user accounts which increase Kerberoasting risk.
+    
+    .EXAMPLE
+        Get-SPNAudit
+        Returns findings about SPN configuration.
+    #>
     [CmdletBinding()]
     param()
-    $objs = Get-ADObject -LDAPFilter '(servicePrincipalName=*)' -Properties servicePrincipalName, SamAccountName, objectClass, userAccountControl
-    $allSpns = @()
-    foreach ($o in $objs) {
-        foreach ($spn in $o.servicePrincipalName) {
-            $allSpns += [pscustomobject]@{
-                Owner          = $o.SamAccountName
-                DN             = $o.DistinguishedName
-                ObjectClass    = $o.objectClass
-                SPN            = $spn
+    
+    Write-ADSHVerbose "Starting SPN audit"
+    
+    try {
+        Write-ADSHVerbose "Querying objects with SPNs"
+        $objs = Get-ADObject -LDAPFilter '(servicePrincipalName=*)' -Properties servicePrincipalName, SamAccountName, objectClass, userAccountControl -ErrorAction Stop
+        Write-ADSHVerbose "Found $($objs.Count) objects with SPNs"
+        
+        $allSpns = @()
+        foreach ($o in $objs) {
+            foreach ($spn in $o.servicePrincipalName) {
+                $allSpns += [pscustomobject]@{
+                    Owner          = $o.SamAccountName
+                    DN             = $o.DistinguishedName
+                    ObjectClass    = $o.objectClass
+                    SPN            = $spn
+                }
             }
         }
-    }
-    $dupes = $allSpns | Group-Object SPN | Where-Object { $_.Count -gt 1 } | ForEach-Object {
-        [pscustomobject]@{
-            SPN    = $_.Name
-            Owners = ($_.Group | Select-Object -ExpandProperty Owner) -join ', '
+        
+        Write-ADSHVerbose "Total SPNs found: $($allSpns.Count)"
+        
+        $dupes = $allSpns | Group-Object SPN | Where-Object { $_.Count -gt 1 } | ForEach-Object {
+            [pscustomobject]@{
+                SPN    = $_.Name
+                Owners = ($_.Group | Select-Object -ExpandProperty Owner) -join ', '
+            }
         }
+        
+        Write-ADSHVerbose "Found $($dupes.Count) duplicate SPNs"
+        
+        $sev = if ($dupes.Count -gt 0) { 'Medium' } else { 'Info' }
+        
+        New-ADSHFinding -Category 'Security' -Id 'SPN' -Severity $sev `
+            -Title "SPN audit (duplicate SPNs & ownership)" `
+            -Description "Duplicate SPNs cause auth conflicts; SPNs on user accounts increase Kerberoasting risk." `
+            -Evidence ([pscustomobject]@{ Duplicates = $dupes; AllSPNs = $allSpns }) `
+            -Remediation "Remove duplicates; prefer computer accounts for service SPNs; monitor for high-value service tickets."
+    } catch {
+        Write-Warning "Failed to audit SPNs: $($_.Exception.Message)"
+        Write-ADSHVerbose "Error auditing SPNs: $_"
+        
+        New-ADSHFinding -Category 'Security' -Id 'SPN' -Severity 'Info' `
+            -Title "SPN audit failed" `
+            -Description "Unable to query SPNs. Error: $($_.Exception.Message)" `
+            -Evidence $null `
+            -Remediation "Verify AD connectivity and permissions."
     }
-    $sev = if ($dupes.Count -gt 0) { 'Medium' } else { 'Info' }
-    New-ADSHFinding -Category 'Security' -Id 'SPN' -Severity $sev `
-        -Title "SPN audit (duplicate SPNs & ownership)" `
-        -Description "Duplicate SPNs cause auth conflicts; SPNs on user accounts increase Kerberoasting risk." `
-        -Evidence [pscustomobject]@{ Duplicates = $dupes; AllSPNs = $allSpns }
-        -Remediation "Remove duplicates; prefer computer accounts for service SPNs; monitor for high-value service tickets."
 }
 
 #endregion
@@ -1349,32 +1515,72 @@ function Get-SPNAudit {
 #region 19. Audit Policy Verification
 
 function Get-AuditPolicyVerification {
+    <#
+    .SYNOPSIS
+        Verifies audit policy configuration on domain controllers.
+    
+    .DESCRIPTION
+        Checks that critical audit categories are enabled on all domain controllers
+        to ensure security events are properly logged.
+    
+    .EXAMPLE
+        Get-AuditPolicyVerification
+        Returns findings about audit policy configuration.
+    #>
     [CmdletBinding()]
     param()
-    $dcs = Get-ADDomainController -Filter * | Select-Object -ExpandProperty HostName
-    $evidence = foreach ($dc in $dcs) {
-        try {
-            $out = Invoke-Command -ComputerName $dc -ScriptBlock { auditpol.exe /get /category:* | Out-String }
-            [pscustomobject]@{
-                DC     = $dc
-                Output = $out
-                KeyAreasCovered = ($out -match 'Account Logon|Account Management|Policy Change|Privilege Use|System')
-            }
-        } catch {
-            [pscustomobject]@{
-                DC     = $dc
-                Output = "Failed: $($_.Exception.Message)"
-                KeyAreasCovered = $false
+    
+    Write-ADSHVerbose "Starting audit policy verification"
+    
+    try {
+        Write-ADSHVerbose "Querying domain controllers"
+        $dcs = Get-ADDomainController -Filter * -ErrorAction Stop | Select-Object -ExpandProperty HostName
+        Write-ADSHVerbose "Found $($dcs.Count) domain controllers"
+        
+        $evidence = foreach ($dc in $dcs) {
+            Write-ADSHVerbose "Checking audit policy on: $dc"
+            try {
+                $out = Invoke-Command -ComputerName $dc -ScriptBlock {
+                    auditpol.exe /get /category:* | Out-String
+                } -ErrorAction Stop
+                
+                [pscustomobject]@{
+                    DC     = $dc
+                    Output = $out
+                    KeyAreasCovered = ($out -match 'Account Logon|Account Management|Policy Change|Privilege Use|System')
+                }
+            } catch {
+                Write-Warning "Failed to get audit policy from $dc`: $($_.Exception.Message)"
+                Write-ADSHVerbose "Error querying audit policy on $dc`: $_"
+                
+                [pscustomobject]@{
+                    DC     = $dc
+                    Output = "Failed: $($_.Exception.Message)"
+                    KeyAreasCovered = $false
+                }
             }
         }
+        
+        $missing = $evidence | Where-Object { -not $_.KeyAreasCovered }
+        Write-ADSHVerbose "Found $($missing.Count) DCs with missing key audit areas"
+        
+        $sev = if ($missing) { 'Medium' } else { 'Info' }
+        
+        New-ADSHFinding -Category 'Monitoring' -Id 'AUDITPOL' -Severity $sev `
+            -Title "Audit policy coverage on domain controllers" `
+            -Description "Ensure auditing for account logon, management, policy change, privilege use, and system events." `
+            -Evidence $evidence `
+            -Remediation "Configure advanced audit policies via GPO; forward events to SIEM."
+    } catch {
+        Write-Warning "Failed to verify audit policies: $($_.Exception.Message)"
+        Write-ADSHVerbose "Error verifying audit policies: $_"
+        
+        New-ADSHFinding -Category 'Monitoring' -Id 'AUDITPOL' -Severity 'Info' `
+            -Title "Audit policy verification failed" `
+            -Description "Unable to verify audit policies. Error: $($_.Exception.Message)" `
+            -Evidence $null `
+            -Remediation "Verify AD connectivity and permissions."
     }
-    $missing = $evidence | Where-Object { -not $_.KeyAreasCovered }
-    $sev = if ($missing) { 'Medium' } else { 'Info' }
-    New-ADSHFinding -Category 'Monitoring' -Id 'AUDITPOL' -Severity $sev `
-        -Title "Audit policy coverage on domain controllers" `
-        -Description "Ensure auditing for account logon, management, policy change, privilege use, and system events." `
-        -Evidence $evidence `
-        -Remediation "Configure advanced audit policies via GPO; forward events to SIEM."
 }
 
 #endregion
@@ -1382,42 +1588,99 @@ function Get-AuditPolicyVerification {
 #region 20. Security Event Log Configuration
 
 function Get-SecurityEventLogConfig {
+    <#
+    .SYNOPSIS
+        Checks Security event log configuration on domain controllers.
+    
+    .DESCRIPTION
+        Verifies that Security event log size and retention settings are adequate
+        to prevent loss of security telemetry.
+    
+    .PARAMETER MinSizeMB
+        Minimum required Security log size in MB. Defaults to configuration value.
+    
+    .EXAMPLE
+        Get-SecurityEventLogConfig
+        Checks log configuration with default minimum size.
+    
+    .EXAMPLE
+        Get-SecurityEventLogConfig -MinSizeMB 4096
+        Checks with 4GB minimum requirement.
+    #>
     [CmdletBinding()]
     param(
+        [Parameter()]
+        [ValidateRange(512, 20480)]
         [int] $MinSizeMB
     )
-    $cfg = Get-ADSHConfig
-    if (-not $MinSizeMB) { $MinSizeMB = [int]$cfg.EventLogMinSizeMB }
-    $dcs = Get-ADDomainController -Filter * | Select-Object -ExpandProperty HostName
-    $evidence = foreach ($dc in $dcs) {
-        try {
-            $data = Invoke-Command -ComputerName $dc -ScriptBlock {
-                Get-CimInstance -ClassName Win32_NTEventLogFile -Filter "LogfileName='Security'" |
-                    Select-Object LogfileName, MaxFileSize, NumberOfRecords, OverwriteOutdated, OverwriteFile, Name
-            }
-            $sizeMB = [math]::Round(($data.MaxFileSize/1MB),2)
-            [pscustomobject]@{
-                DC              = $dc
-                MaxFileSizeMB   = $sizeMB
-                NumberOfRecords = $data.NumberOfRecords
-                OverwritePolicy = if ($data.OverwriteOutdated) { 'Overwrite oldest' } elseif ($data.OverwriteFile) { 'Overwrite as needed' } else { 'Do not overwrite' }
-            }
-        } catch {
-            [pscustomobject]@{
-                DC              = $dc
-                MaxFileSizeMB   = $null
-                NumberOfRecords = $null
-                OverwritePolicy = "Failed: $($_.Exception.Message)"
+    
+    Write-ADSHVerbose "Starting Security event log configuration check"
+    
+    try {
+        $cfg = Get-ADSHConfig
+        if (-not $MinSizeMB) {
+            $MinSizeMB = [int]$cfg.EventLogMinSizeMB
+            Write-ADSHVerbose "Using minimum log size from configuration: $MinSizeMB MB"
+        }
+    } catch {
+        Write-Warning "Failed to load configuration, using default minimum of 2048 MB"
+        $MinSizeMB = 2048
+    }
+    
+    try {
+        Write-ADSHVerbose "Querying domain controllers"
+        $dcs = Get-ADDomainController -Filter * -ErrorAction Stop | Select-Object -ExpandProperty HostName
+        Write-ADSHVerbose "Found $($dcs.Count) domain controllers"
+        
+        $evidence = foreach ($dc in $dcs) {
+            Write-ADSHVerbose "Checking Security log configuration on: $dc"
+            try {
+                $data = Invoke-Command -ComputerName $dc -ScriptBlock {
+                    Get-CimInstance -ClassName Win32_NTEventLogFile -Filter "LogfileName='Security'" |
+                        Select-Object LogfileName, MaxFileSize, NumberOfRecords, OverwriteOutdated, OverwriteFile, Name
+                } -ErrorAction Stop
+                
+                $sizeMB = [math]::Round(($data.MaxFileSize/1MB),2)
+                
+                [pscustomobject]@{
+                    DC              = $dc
+                    MaxFileSizeMB   = $sizeMB
+                    NumberOfRecords = $data.NumberOfRecords
+                    OverwritePolicy = if ($data.OverwriteOutdated) { 'Overwrite oldest' } elseif ($data.OverwriteFile) { 'Overwrite as needed' } else { 'Do not overwrite' }
+                }
+            } catch {
+                Write-Warning "Failed to get log configuration from $dc`: $($_.Exception.Message)"
+                Write-ADSHVerbose "Error querying log config on $dc`: $_"
+                
+                [pscustomobject]@{
+                    DC              = $dc
+                    MaxFileSizeMB   = $null
+                    NumberOfRecords = $null
+                    OverwritePolicy = "Failed: $($_.Exception.Message)"
+                }
             }
         }
+        
+        $undersized = $evidence | Where-Object { $_.MaxFileSizeMB -and $_.MaxFileSizeMB -lt $MinSizeMB }
+        Write-ADSHVerbose "Found $($undersized.Count) DCs with undersized Security logs"
+        
+        $sev = if ($undersized) { 'Medium' } else { 'Info' }
+        
+        New-ADSHFinding -Category 'Monitoring' -Id 'SECLOG' -Severity $sev `
+            -Title "Security log size and retention on domain controllers" `
+            -Description "Adequate log size and retention prevent loss of critical security telemetry." `
+            -Evidence $evidence `
+            -Remediation "Increase Security log size (≥$MinSizeMB MB) and configure retention; forward to SIEM."
+    } catch {
+        Write-Warning "Failed to check Security log configuration: $($_.Exception.Message)"
+        Write-ADSHVerbose "Error checking log config: $_"
+        
+        New-ADSHFinding -Category 'Monitoring' -Id 'SECLOG' -Severity 'Info' `
+            -Title "Security log configuration check failed" `
+            -Description "Unable to check log configuration. Error: $($_.Exception.Message)" `
+            -Evidence $null `
+            -Remediation "Verify AD connectivity and permissions."
     }
-    $undersized = $evidence | Where-Object { $_.MaxFileSizeMB -lt $MinSizeMB }
-    $sev = if ($undersized) { 'Medium' } else { 'Info' }
-    New-ADSHFinding -Category 'Monitoring' -Id 'SECLOG' -Severity $sev `
-        -Title "Security log size and retention on domain controllers" `
-        -Description "Adequate log size and retention prevent loss of critical security telemetry." `
-        -Evidence $evidence `
-        -Remediation "Increase Security log size (≥$MinSizeMB MB) and configure retention; forward to SIEM."
 }
 
 #endregion
