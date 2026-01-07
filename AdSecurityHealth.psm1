@@ -5,34 +5,96 @@
 #region Helpers
 
 function Initialize-ADSHEnvironment {
+    <#
+    .SYNOPSIS
+        Initializes the Active Directory Security Health environment by loading required modules.
+    
+    .DESCRIPTION
+        Validates and imports required PowerShell modules for AD security checks.
+        Provides warnings if modules are not available.
+    
+    .PARAMETER RequiredModules
+        Array of module names to import. Defaults to ActiveDirectory and GroupPolicy.
+    
+    .EXAMPLE
+        Initialize-ADSHEnvironment
+        Imports default modules (ActiveDirectory, GroupPolicy).
+    
+    .EXAMPLE
+        Initialize-ADSHEnvironment -RequiredModules @('ActiveDirectory')
+        Imports only the ActiveDirectory module.
+    #>
     [CmdletBinding()]
     param(
         [Parameter()]
+        [ValidateNotNullOrEmpty()]
         [string[]] $RequiredModules = @('ActiveDirectory','GroupPolicy')
     )
+    
+    Write-ADSHVerbose "Initializing ADSH environment with modules: $($RequiredModules -join ', ')"
+    
     foreach ($m in $RequiredModules) {
-        if (-not (Get-Module -ListAvailable -Name $m)) {
-            Write-Warning "Module '$m' not found. Please install RSAT or the module."
-        } else {
-            Import-Module -Name $m -ErrorAction SilentlyContinue
+        try {
+            if (-not (Get-Module -ListAvailable -Name $m)) {
+                Write-Warning "Module '$m' not found. Please install RSAT or the module."
+                Write-ADSHVerbose "Module '$m' is not available on this system"
+            } else {
+                Write-ADSHVerbose "Importing module: $m"
+                Import-Module -Name $m -ErrorAction Stop
+                Write-ADSHVerbose "Successfully imported module: $m"
+            }
+        } catch {
+            Write-Warning "Failed to import module '$m': $($_.Exception.Message)"
+            Write-ADSHVerbose "Error importing module '$m': $_"
         }
     }
 }
 
 function Get-ADSHConfig {
+    <#
+    .SYNOPSIS
+        Retrieves the ADSH configuration from a JSON file or returns defaults.
+    
+    .DESCRIPTION
+        Loads configuration settings from a JSON file. If the file doesn't exist or
+        cannot be parsed, returns default configuration values.
+    
+    .PARAMETER Path
+        Path to the configuration JSON file. Defaults to adsh-config.json in module directory.
+    
+    .EXAMPLE
+        $config = Get-ADSHConfig
+        Loads configuration from default location.
+    
+    .EXAMPLE
+        $config = Get-ADSHConfig -Path "C:\custom\config.json"
+        Loads configuration from a custom path.
+    #>
     [CmdletBinding()]
     param(
         [Parameter()]
+        [ValidateNotNullOrEmpty()]
         [string] $Path = "$PSScriptRoot\adsh-config.json"
     )
+    
+    Write-ADSHVerbose "Loading configuration from: $Path"
+    
     if (Test-Path -Path $Path) {
         try {
-            return Get-Content -Raw -Path $Path | ConvertFrom-Json
+            Write-ADSHVerbose "Configuration file found, parsing JSON"
+            $config = Get-Content -Raw -Path $Path -ErrorAction Stop | ConvertFrom-Json
+            Write-ADSHVerbose "Successfully loaded configuration from file"
+            return $config
         } catch {
-            Write-Warning "Failed to parse config '$Path': $_"
+            Write-Warning "Failed to parse config '$Path': $($_.Exception.Message)"
+            Write-ADSHVerbose "Error parsing config file, falling back to defaults: $_"
         }
+    } else {
+        Write-ADSHVerbose "Configuration file not found at '$Path', using defaults"
     }
+    
     # Defaults if config not found
+    Write-ADSHVerbose "Returning default configuration values"
     [pscustomobject]@{
         StaleDays                     = 90
         ReplicationMaxLatencyMinutes  = 60
@@ -55,16 +117,70 @@ function Get-ADSHConfig {
 }
 
 function New-ADSHFinding {
+    <#
+    .SYNOPSIS
+        Creates a standardized finding object for ADSH reports.
+    
+    .DESCRIPTION
+        Constructs a PowerShell custom object representing a security or health finding
+        with consistent structure across all checks.
+    
+    .PARAMETER Category
+        The category of the finding (Security, Health, Policy, etc.).
+    
+    .PARAMETER Id
+        Unique identifier for this finding type.
+    
+    .PARAMETER Severity
+        Severity level: Info, Low, Medium, High, or Critical.
+    
+    .PARAMETER Title
+        Short title describing the finding.
+    
+    .PARAMETER Description
+        Detailed description of the finding.
+    
+    .PARAMETER Evidence
+        Supporting data for the finding (objects, arrays, etc.).
+    
+    .PARAMETER Remediation
+        Recommended remediation steps.
+    
+    .EXAMPLE
+        New-ADSHFinding -Category 'Security' -Id 'TEST-001' -Severity 'High' `
+            -Title 'Test Finding' -Description 'This is a test' `
+            -Evidence $data -Remediation 'Fix the issue'
+    #>
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory)] [string] $Category,
-        [Parameter(Mandatory)] [string] $Id,
-        [Parameter(Mandatory)] [ValidateSet('Info','Low','Medium','High','Critical')] [string] $Severity,
-        [Parameter(Mandatory)] [string] $Title,
-        [Parameter()] [string] $Description,
-        [Parameter()] [object] $Evidence,
-        [Parameter()] [string] $Remediation
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string] $Category,
+        
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string] $Id,
+        
+        [Parameter(Mandatory)]
+        [ValidateSet('Info','Low','Medium','High','Critical')]
+        [string] $Severity,
+        
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string] $Title,
+        
+        [Parameter()]
+        [string] $Description,
+        
+        [Parameter()]
+        [object] $Evidence,
+        
+        [Parameter()]
+        [string] $Remediation
     )
+    
+    Write-ADSHVerbose "Creating finding: [$Category] $Id - $Severity - $Title"
+    
     [pscustomobject]@{
         Timestamp   = (Get-Date).ToString('o')
         Category    = $Category
@@ -78,7 +194,25 @@ function New-ADSHFinding {
 }
 
 function Write-ADSHVerbose {
-    param([string]$Message)
+    <#
+    .SYNOPSIS
+        Writes a verbose message with ADSH prefix.
+    
+    .DESCRIPTION
+        Wrapper for Write-Verbose that adds [ADSH] prefix for consistent logging.
+    
+    .PARAMETER Message
+        The message to write to verbose stream.
+    
+    .EXAMPLE
+        Write-ADSHVerbose "Processing user accounts"
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Message
+    )
     Write-Verbose "[ADSH] $Message"
 }
 
@@ -87,33 +221,98 @@ function Write-ADSHVerbose {
 #region 1. Privileged Group Membership
 
 function Get-PrivilegedGroupMembership {
+    <#
+    .SYNOPSIS
+        Audits membership of privileged Active Directory groups.
+    
+    .DESCRIPTION
+        Enumerates members of sensitive/privileged AD groups to identify potential
+        security risks. Returns findings for each group checked.
+    
+    .PARAMETER Groups
+        Array of group names to check. Defaults to sensitive groups from configuration.
+    
+    .PARAMETER Server
+        Target domain controller. If not specified, uses default DC.
+    
+    .EXAMPLE
+        Get-PrivilegedGroupMembership
+        Checks default privileged groups.
+    
+    .EXAMPLE
+        Get-PrivilegedGroupMembership -Groups 'Domain Admins' -Server 'DC01'
+        Checks specific group on a specific DC.
+    #>
     [CmdletBinding()]
     param(
+        [Parameter()]
+        [ValidateNotNullOrEmpty()]
         [string[]] $Groups,
+        
+        [Parameter()]
+        [ValidateNotNullOrEmpty()]
         [string] $Server
     )
-    $cfg = Get-ADSHConfig
-    if (-not $Groups) { $Groups = $cfg.SensitiveGroups }
+    
+    Write-ADSHVerbose "Starting privileged group membership audit"
+    
+    try {
+        $cfg = Get-ADSHConfig
+        if (-not $Groups) {
+            $Groups = $cfg.SensitiveGroups
+            Write-ADSHVerbose "Using default sensitive groups from configuration: $($Groups.Count) groups"
+        }
+    } catch {
+        Write-Warning "Failed to load configuration: $($_.Exception.Message)"
+        Write-ADSHVerbose "Error loading config: $_"
+        $Groups = @('Domain Admins', 'Enterprise Admins')
+    }
+    
     $findings = @()
+    
     foreach ($g in $Groups) {
+        Write-ADSHVerbose "Processing group: $g"
         try {
-            $grp = Get-ADGroup -Identity $g -Server $Server -ErrorAction Stop
-            $members = Get-ADGroupMember -Identity $grp.DistinguishedName -Recursive -Server $Server -ErrorAction SilentlyContinue
+            $params = @{
+                Identity    = $g
+                ErrorAction = 'Stop'
+            }
+            if ($Server) { $params['Server'] = $Server }
+            
+            $grp = Get-ADGroup @params
+            Write-ADSHVerbose "Found group: $($grp.DistinguishedName)"
+            
+            $memberParams = @{
+                Identity    = $grp.DistinguishedName
+                Recursive   = $true
+                ErrorAction = 'Stop'
+            }
+            if ($Server) { $memberParams['Server'] = $Server }
+            
+            $members = Get-ADGroupMember @memberParams
+            Write-ADSHVerbose "Group '$g' has $($members.Count) members"
+            
             $evidence = $members | Select-Object Name, SamAccountName, ObjectClass, DistinguishedName
             $sev = if ($members.Count -gt 0) { 'High' } else { 'Info' }
+            
             $findings += New-ADSHFinding -Category 'Security' -Id "PRIV-$($grp.SamAccountName)" -Severity $sev `
                 -Title "Privileged group membership: $($grp.SamAccountName)" `
                 -Description "List members of privileged group." `
                 -Evidence $evidence `
                 -Remediation "Review and remove unnecessary members. Enforce tiered admin model and JIT/PIM for elevation."
         } catch {
+            Write-Warning "Failed to process group '$g': $($_.Exception.Message)"
+            Write-ADSHVerbose "Error processing group '$g': $_"
+            
             $findings += New-ADSHFinding -Category 'Security' -Id "PRIV-$g" -Severity 'Info' `
                 -Title "Privileged group not found: $g" `
-                -Description "Group may not exist in this domain." `
+                -Description "Group may not exist in this domain. Error: $($_.Exception.Message)" `
                 -Evidence $null `
                 -Remediation "Validate domain scope and name."
         }
     }
+    
+    Write-ADSHVerbose "Completed privileged group membership audit with $($findings.Count) findings"
     $findings
 }
 
@@ -122,33 +321,86 @@ function Get-PrivilegedGroupMembership {
 #region 2. Stale/Inactive Accounts
 
 function Get-StaleAccounts {
+    <#
+    .SYNOPSIS
+        Identifies stale enabled user accounts in Active Directory.
+    
+    .DESCRIPTION
+        Finds enabled user accounts that haven't logged on within the specified
+        number of days. Helps identify unused accounts that increase attack surface.
+    
+    .PARAMETER StaleDays
+        Number of days without logon to consider an account stale. Defaults to config value.
+    
+    .EXAMPLE
+        Get-StaleAccounts
+        Uses default stale days threshold from configuration.
+    
+    .EXAMPLE
+        Get-StaleAccounts -StaleDays 60
+        Finds accounts with no logon in 60+ days.
+    #>
     [CmdletBinding()]
     param(
+        [Parameter()]
+        [ValidateRange(1, 3650)]
         [int] $StaleDays
     )
-    $cfg = Get-ADSHConfig
-    if (-not $StaleDays) { $StaleDays = [int]$cfg.StaleDays }
+    
+    Write-ADSHVerbose "Starting stale accounts audit"
+    
+    try {
+        $cfg = Get-ADSHConfig
+        if (-not $StaleDays) {
+            $StaleDays = [int]$cfg.StaleDays
+            Write-ADSHVerbose "Using stale days threshold from configuration: $StaleDays days"
+        }
+    } catch {
+        Write-Warning "Failed to load configuration, using default of 90 days"
+        $StaleDays = 90
+    }
+    
     $cutoff = (Get-Date).AddDays(-$StaleDays)
-    $users = Get-ADUser -Filter 'enabled -eq $true' -Properties lastLogonTimestamp,whenCreated,PasswordNeverExpires
-    $stale = foreach ($u in $users) {
-        $llt = if ($u.lastLogonTimestamp) { [DateTime]::FromFileTime($u.lastLogonTimestamp) } else { $null }
-        if (-not $llt -or $llt -lt $cutoff) {
-            [pscustomobject]@{
-                Name                = $u.Name
-                SamAccountName      = $u.SamAccountName
-                LastLogon           = $llt
-                WhenCreated         = $u.whenCreated
-                PasswordNeverExpires= $u.PasswordNeverExpires
-                DN                  = $u.DistinguishedName
+    Write-ADSHVerbose "Cutoff date for stale accounts: $($cutoff.ToString('yyyy-MM-dd'))"
+    
+    try {
+        Write-ADSHVerbose "Querying enabled user accounts"
+        $users = Get-ADUser -Filter 'enabled -eq $true' -Properties lastLogonTimestamp,whenCreated,PasswordNeverExpires -ErrorAction Stop
+        Write-ADSHVerbose "Found $($users.Count) enabled user accounts"
+        
+        $stale = foreach ($u in $users) {
+            $llt = if ($u.lastLogonTimestamp) { [DateTime]::FromFileTime($u.lastLogonTimestamp) } else { $null }
+            if (-not $llt -or $llt -lt $cutoff) {
+                [pscustomobject]@{
+                    Name                = $u.Name
+                    SamAccountName      = $u.SamAccountName
+                    LastLogon           = $llt
+                    WhenCreated         = $u.whenCreated
+                    PasswordNeverExpires= $u.PasswordNeverExpires
+                    DN                  = $u.DistinguishedName
+                }
             }
         }
+        
+        Write-ADSHVerbose "Identified $($stale.Count) stale accounts"
+        
+        $sev = if ($stale.Count -gt 50) { 'High' } elseif ($stale.Count -gt 0) { 'Medium' } else { 'Info' }
+        
+        New-ADSHFinding -Category 'Hygiene' -Id 'STALE-ACCOUNTS' -Severity $sev `
+            -Title "Stale enabled user accounts (>$StaleDays days)" `
+            -Description "Enabled accounts with no recent logon increase attack surface." `
+            -Evidence $stale `
+            -Remediation "Disable or remove stale accounts. Implement lifecycle automation and time-bound access."
+    } catch {
+        Write-Warning "Failed to query user accounts: $($_.Exception.Message)"
+        Write-ADSHVerbose "Error querying accounts: $_"
+        
+        New-ADSHFinding -Category 'Hygiene' -Id 'STALE-ACCOUNTS' -Severity 'Info' `
+            -Title "Stale accounts check failed" `
+            -Description "Unable to query user accounts. Error: $($_.Exception.Message)" `
+            -Evidence $null `
+            -Remediation "Verify AD connectivity and permissions."
     }
-    $sev = if ($stale.Count -gt 50) { 'High' } elseif ($stale.Count -gt 0) { 'Medium' } else { 'Info' }
-    New-ADSHFinding -Category 'Hygiene' -Id 'STALE-ACCOUNTS' -Severity $sev `
-        -Title "Stale enabled user accounts (>$StaleDays days)" `
-        -Description "Enabled accounts with no recent logon increase attack surface." `
-        -Evidence $stale `
-        -Remediation "Disable or remove stale accounts. Implement lifecycle automation and time-bound access."
 }
 
 #endregion
@@ -156,20 +408,54 @@ function Get-StaleAccounts {
 #region 3. Password Policy Audit
 
 function Get-PasswordPolicyAudit {
+    <#
+    .SYNOPSIS
+        Audits Active Directory password policies.
+    
+    .DESCRIPTION
+        Reviews domain default password policy and fine-grained password policies (FGPP)
+        for security weaknesses.
+    
+    .EXAMPLE
+        Get-PasswordPolicyAudit
+        Returns findings about password policies.
+    #>
     [CmdletBinding()]
     param()
-    $domainPolicy = Get-ADDefaultDomainPasswordPolicy -ErrorAction SilentlyContinue
-    $fgpp = Get-ADFineGrainedPasswordPolicy -Filter * -Properties * -ErrorAction SilentlyContinue
-    $evidence = [pscustomobject]@{
-        DefaultDomain = $domainPolicy
-        FineGrained   = $fgpp | Select-Object Name, Precedence, MinPasswordLength, PasswordHistoryCount, MaxPasswordAge, PasswordComplexityEnabled, ReversibleEncryptionEnabled
+    
+    Write-ADSHVerbose "Starting password policy audit"
+    
+    try {
+        Write-ADSHVerbose "Querying default domain password policy"
+        $domainPolicy = Get-ADDefaultDomainPasswordPolicy -ErrorAction Stop
+        Write-ADSHVerbose "Retrieved default domain policy"
+        
+        Write-ADSHVerbose "Querying fine-grained password policies"
+        $fgpp = Get-ADFineGrainedPasswordPolicy -Filter * -Properties * -ErrorAction SilentlyContinue
+        Write-ADSHVerbose "Found $($fgpp.Count) fine-grained password policies"
+        
+        $evidence = [pscustomobject]@{
+            DefaultDomain = $domainPolicy
+            FineGrained   = $fgpp | Select-Object Name, Precedence, MinPasswordLength, PasswordHistoryCount, MaxPasswordAge, PasswordComplexityEnabled, ReversibleEncryptionEnabled
+        }
+        
+        $sev = 'Medium'
+        
+        New-ADSHFinding -Category 'Policy' -Id 'PWD-POLICY' -Severity $sev `
+            -Title "Password policy audit (domain + FGPP)" `
+            -Description "Reviews domain and fine-grained password policies for strength and reversible encryption." `
+            -Evidence $evidence `
+            -Remediation "Set MinLength >= 14+ or prefer passphrases. Enable complexity. Disable reversible encryption. Consider AAD/SSO and MFA."
+    } catch {
+        Write-Warning "Failed to retrieve password policies: $($_.Exception.Message)"
+        Write-ADSHVerbose "Error retrieving password policies: $_"
+        
+        New-ADSHFinding -Category 'Policy' -Id 'PWD-POLICY' -Severity 'Info' `
+            -Title "Password policy audit failed" `
+            -Description "Unable to retrieve password policies. Error: $($_.Exception.Message)" `
+            -Evidence $null `
+            -Remediation "Verify AD connectivity and permissions."
     }
-    $sev = 'Medium'
-    New-ADSHFinding -Category 'Policy' -Id 'PWD-POLICY' -Severity $sev `
-        -Title "Password policy audit (domain + FGPP)" `
-        -Description "Reviews domain and fine-grained password policies for strength and reversible encryption." `
-        -Evidence $evidence `
-        -Remediation "Set MinLength >= 14+ or prefer passphrases. Enable complexity. Disable reversible encryption. Consider AAD/SSO and MFA."
 }
 
 #endregion
@@ -177,16 +463,46 @@ function Get-PasswordPolicyAudit {
 #region 4. Accounts with Password Never Expires
 
 function Get-AccountsPasswordNeverExpires {
+    <#
+    .SYNOPSIS
+        Identifies enabled accounts with passwords set to never expire.
+    
+    .DESCRIPTION
+        Finds enabled user accounts with PasswordNeverExpires attribute set,
+        which increases security risk.
+    
+    .EXAMPLE
+        Get-AccountsPasswordNeverExpires
+        Returns findings about accounts with non-expiring passwords.
+    #>
     [CmdletBinding()]
     param()
-    $users = Get-ADUser -Filter 'PasswordNeverExpires -eq $true -and enabled -eq $true' -Properties PasswordNeverExpires,lastLogonTimestamp
-    $evidence = $users | Select-Object Name, SamAccountName, Enabled, PasswordNeverExpires, @{n='LastLogon';e={ if ($_.lastLogonTimestamp) {[DateTime]::FromFileTime($_.lastLogonTimestamp)} else {$null}}}, DistinguishedName
-    $sev = if ($users.Count -gt 0) { 'High' } else { 'Info' }
-    New-ADSHFinding -Category 'Security' -Id 'PWD-NEVER-EXPIRES' -Severity $sev `
-        -Title "Enabled accounts with password set to never expire" `
-        -Description "Service or privileged accounts with non-expiring passwords increase risk." `
-        -Evidence $evidence `
-        -Remediation "Migrate to gMSA or vault-managed secrets; enforce rotation via policy or automation."
+    
+    Write-ADSHVerbose "Starting password never expires audit"
+    
+    try {
+        Write-ADSHVerbose "Querying enabled accounts with PasswordNeverExpires=true"
+        $users = Get-ADUser -Filter 'PasswordNeverExpires -eq $true -and enabled -eq $true' -Properties PasswordNeverExpires,lastLogonTimestamp -ErrorAction Stop
+        Write-ADSHVerbose "Found $($users.Count) accounts with password never expires"
+        
+        $evidence = $users | Select-Object Name, SamAccountName, Enabled, PasswordNeverExpires, @{n='LastLogon';e={ if ($_.lastLogonTimestamp) {[DateTime]::FromFileTime($_.lastLogonTimestamp)} else {$null}}}, DistinguishedName
+        $sev = if ($users.Count -gt 0) { 'High' } else { 'Info' }
+        
+        New-ADSHFinding -Category 'Security' -Id 'PWD-NEVER-EXPIRES' -Severity $sev `
+            -Title "Enabled accounts with password set to never expire" `
+            -Description "Service or privileged accounts with non-expiring passwords increase risk." `
+            -Evidence $evidence `
+            -Remediation "Migrate to gMSA or vault-managed secrets; enforce rotation via policy or automation."
+    } catch {
+        Write-Warning "Failed to query accounts with PasswordNeverExpires: $($_.Exception.Message)"
+        Write-ADSHVerbose "Error querying accounts: $_"
+        
+        New-ADSHFinding -Category 'Security' -Id 'PWD-NEVER-EXPIRES' -Severity 'Info' `
+            -Title "Password never expires check failed" `
+            -Description "Unable to query accounts. Error: $($_.Exception.Message)" `
+            -Evidence $null `
+            -Remediation "Verify AD connectivity and permissions."
+    }
 }
 
 #endregion
@@ -194,18 +510,50 @@ function Get-AccountsPasswordNeverExpires {
 #region 5. Accounts with Reversible Encryption
 
 function Get-AccountsReversibleEncryption {
+    <#
+    .SYNOPSIS
+        Checks for reversible encryption enabled in password policies.
+    
+    .DESCRIPTION
+        Identifies fine-grained password policies with reversible encryption enabled,
+        which significantly weakens password security.
+    
+    .EXAMPLE
+        Get-AccountsReversibleEncryption
+        Returns findings about reversible encryption in password policies.
+    #>
     [CmdletBinding()]
     param()
-    # Note: Reversible encryption is controlled by domain/FGPP policy; enumerate FGPP for msDS-PasswordReversibleEncryptionEnabled.
-    $fgpp = Get-ADFineGrainedPasswordPolicy -Filter * -Properties * -ErrorAction SilentlyContinue
-    $enabledFgpp = $fgpp | Where-Object { $_.ReversibleEncryptionEnabled -eq $true -or $_.'msDS-PasswordReversibleEncryptionEnabled' -eq $true }
-    $evidence = $enabledFgpp | Select-Object Name, Precedence, ReversibleEncryptionEnabled, 'msDS-PasswordReversibleEncryptionEnabled'
-    $sev = if ($enabledFgpp.Count -gt 0) { 'High' } else { 'Info' }
-    New-ADSHFinding -Category 'Policy' -Id 'REV-ENC' -Severity $sev `
-        -Title "Reversible password encryption enabled in FGPP" `
-        -Description "Storing passwords with reversible encryption significantly weakens security." `
-        -Evidence $evidence `
-        -Remediation "Disable reversible encryption in all password policies. Validate via Group Policy 'Accounts: Store passwords using reversible encryption'."
+    
+    Write-ADSHVerbose "Starting reversible encryption audit"
+    
+    try {
+        # Note: Reversible encryption is controlled by domain/FGPP policy; enumerate FGPP for msDS-PasswordReversibleEncryptionEnabled.
+        Write-ADSHVerbose "Querying fine-grained password policies"
+        $fgpp = Get-ADFineGrainedPasswordPolicy -Filter * -Properties * -ErrorAction Stop
+        Write-ADSHVerbose "Found $($fgpp.Count) fine-grained password policies"
+        
+        $enabledFgpp = $fgpp | Where-Object { $_.ReversibleEncryptionEnabled -eq $true -or $_.'msDS-PasswordReversibleEncryptionEnabled' -eq $true }
+        Write-ADSHVerbose "Found $($enabledFgpp.Count) policies with reversible encryption enabled"
+        
+        $evidence = $enabledFgpp | Select-Object Name, Precedence, ReversibleEncryptionEnabled, 'msDS-PasswordReversibleEncryptionEnabled'
+        $sev = if ($enabledFgpp.Count -gt 0) { 'High' } else { 'Info' }
+        
+        New-ADSHFinding -Category 'Policy' -Id 'REV-ENC' -Severity $sev `
+            -Title "Reversible password encryption enabled in FGPP" `
+            -Description "Storing passwords with reversible encryption significantly weakens security." `
+            -Evidence $evidence `
+            -Remediation "Disable reversible encryption in all password policies. Validate via Group Policy 'Accounts: Store passwords using reversible encryption'."
+    } catch {
+        Write-Warning "Failed to query fine-grained password policies: $($_.Exception.Message)"
+        Write-ADSHVerbose "Error querying FGPP: $_"
+        
+        New-ADSHFinding -Category 'Policy' -Id 'REV-ENC' -Severity 'Info' `
+            -Title "Reversible encryption check failed" `
+            -Description "Unable to query fine-grained password policies. Error: $($_.Exception.Message)" `
+            -Evidence $null `
+            -Remediation "Verify AD connectivity and permissions."
+    }
 }
 
 #endregion
@@ -707,40 +1055,104 @@ function Get-SecurityEventLogConfig {
 #region Orchestrator
 
 function Invoke-ADSecurityHealthCheck {
+    <#
+    .SYNOPSIS
+        Executes all Active Directory security and health checks.
+    
+    .DESCRIPTION
+        Orchestrator function that runs all security and health audit functions
+        and returns consolidated findings.
+    
+    .PARAMETER IncludeRawEvidence
+        When specified, includes full evidence data in results. Otherwise returns
+        summary view with evidence trimmed.
+    
+    .EXAMPLE
+        Invoke-ADSecurityHealthCheck
+        Runs all checks with summary output.
+    
+    .EXAMPLE
+        Invoke-ADSecurityHealthCheck -IncludeRawEvidence
+        Runs all checks with full evidence data.
+    #>
     [CmdletBinding()]
     param(
+        [Parameter()]
         [switch] $IncludeRawEvidence
     )
-    Initialize-ADSHEnvironment
+    
+    Write-ADSHVerbose "========================================="
+    Write-ADSHVerbose "Starting AD Security Health Check"
+    Write-ADSHVerbose "========================================="
+    Write-ADSHVerbose "Include Raw Evidence: $IncludeRawEvidence"
+    
+    try {
+        Write-ADSHVerbose "Initializing environment"
+        Initialize-ADSHEnvironment
+    } catch {
+        Write-Warning "Failed to initialize environment: $($_.Exception.Message)"
+        Write-ADSHVerbose "Initialization error: $_"
+    }
+    
     $results = @()
-    $results += Get-PrivilegedGroupMembership
-    $results += Get-StaleAccounts
-    $results += Get-PasswordPolicyAudit
-    $results += Get-AccountsPasswordNeverExpires
-    $results += Get-AccountsReversibleEncryption
-    $results += Get-KerberosDelegationIssues
-    $results += Get-AdminSDHolderProtectedAccounts
-    $results += Get-ExcessivePermissionsDelegations
-    $results += Get-DCReplicationStatus
-    $results += Get-DNSHealth
-    $results += Get-SYSVOLReplicationStatus
-    $results += Get-FSMORoleHolders
-    $results += Get-DCServiceStatus
-    $results += Get-ADDatabaseStats
-    $results += Get-TrustRelationships
-    $results += Get-GPOReview
-    $results += Get-PreWin2000AccessRisks
-    $results += Get-SPNAudit
-    $results += Get-AuditPolicyVerification
-    $results += Get-SecurityEventLogConfig
+    
+    # Execute all checks with error handling
+    $checks = @(
+        @{ Name = "Privileged Group Membership"; Function = { Get-PrivilegedGroupMembership } }
+        @{ Name = "Stale Accounts"; Function = { Get-StaleAccounts } }
+        @{ Name = "Password Policy Audit"; Function = { Get-PasswordPolicyAudit } }
+        @{ Name = "Accounts Password Never Expires"; Function = { Get-AccountsPasswordNeverExpires } }
+        @{ Name = "Accounts Reversible Encryption"; Function = { Get-AccountsReversibleEncryption } }
+        @{ Name = "Kerberos Delegation Issues"; Function = { Get-KerberosDelegationIssues } }
+        @{ Name = "AdminSDHolder Protected Accounts"; Function = { Get-AdminSDHolderProtectedAccounts } }
+        @{ Name = "Excessive Permissions Delegations"; Function = { Get-ExcessivePermissionsDelegations } }
+        @{ Name = "DC Replication Status"; Function = { Get-DCReplicationStatus } }
+        @{ Name = "DNS Health"; Function = { Get-DNSHealth } }
+        @{ Name = "SYSVOL Replication Status"; Function = { Get-SYSVOLReplicationStatus } }
+        @{ Name = "FSMO Role Holders"; Function = { Get-FSMORoleHolders } }
+        @{ Name = "DC Service Status"; Function = { Get-DCServiceStatus } }
+        @{ Name = "AD Database Stats"; Function = { Get-ADDatabaseStats } }
+        @{ Name = "Trust Relationships"; Function = { Get-TrustRelationships } }
+        @{ Name = "GPO Review"; Function = { Get-GPOReview } }
+        @{ Name = "Pre-Win2000 Access Risks"; Function = { Get-PreWin2000AccessRisks } }
+        @{ Name = "SPN Audit"; Function = { Get-SPNAudit } }
+        @{ Name = "Audit Policy Verification"; Function = { Get-AuditPolicyVerification } }
+        @{ Name = "Security Event Log Config"; Function = { Get-SecurityEventLogConfig } }
+    )
+    
+    foreach ($check in $checks) {
+        Write-ADSHVerbose "---"
+        Write-ADSHVerbose "Executing check: $($check.Name)"
+        try {
+            $checkResults = & $check.Function
+            if ($checkResults) {
+                $results += $checkResults
+                Write-ADSHVerbose "Check completed: $($check.Name) - $($checkResults.Count) findings"
+            } else {
+                Write-ADSHVerbose "Check completed: $($check.Name) - no findings"
+            }
+        } catch {
+            Write-Warning "Check '$($check.Name)' failed: $($_.Exception.Message)"
+            Write-ADSHVerbose "Error in check '$($check.Name)': $_"
+        }
+    }
 
+    Write-ADSHVerbose "---"
+    Write-ADSHVerbose "All checks completed. Total findings: $($results.Count)"
+    
     if (-not $IncludeRawEvidence) {
         # Trim very large evidence if needed in summary view
+        Write-ADSHVerbose "Trimming evidence for summary view"
         $results = $results | ForEach-Object {
             $obj = $_ | Select-Object Timestamp, Category, Id, Severity, Title, Description, Remediation
             $obj
         }
     }
+    
+    Write-ADSHVerbose "========================================="
+    Write-ADSHVerbose "AD Security Health Check Complete"
+    Write-ADSHVerbose "========================================="
+    
     $results
 }
 
