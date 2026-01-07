@@ -27,7 +27,6 @@ function Initialize-ADSHEnvironment {
     [CmdletBinding()]
     param(
         [Parameter()]
-        [ValidateNotNullOrEmpty()]
         [string[]] $RequiredModules = @('ActiveDirectory','GroupPolicy')
     )
     
@@ -246,7 +245,6 @@ function Get-PrivilegedGroupMembership {
     [CmdletBinding()]
     param(
         [Parameter()]
-        [ValidateNotNullOrEmpty()]
         [string[]] $Groups,
         
         [Parameter()]
@@ -692,7 +690,6 @@ function Get-ExcessivePermissionsDelegations {
     [CmdletBinding()]
     param(
         [Parameter()]
-        [ValidateNotNullOrEmpty()]
         [string[]] $Targets
     )
     
@@ -1119,7 +1116,6 @@ function Get-DCServiceStatus {
     [CmdletBinding()]
     param(
         [Parameter()]
-        [ValidateNotNullOrEmpty()]
         [string[]] $Services
     )
     
@@ -1147,7 +1143,7 @@ function Get-DCServiceStatus {
                 $svc = Invoke-Command -ComputerName $dc -ScriptBlock {
                     param($names)
                     Get-Service -Name $names -ErrorAction SilentlyContinue | Select-Object Name, Status
-                } -ArgumentList (,$Services) -ErrorAction Stop
+                } -ArgumentList (,$Services) -ErrorAction Stop  # Comma operator ensures array is passed as single argument
                 
                 [pscustomobject]@{
                     DC       = $dc
