@@ -561,25 +561,61 @@ function Get-AccountsReversibleEncryption {
 #region 6. Kerberos Delegation Issues
 
 function Get-KerberosDelegationIssues {
+    <#
+    .SYNOPSIS
+        Audits Kerberos delegation configurations for security risks.
+    
+    .DESCRIPTION
+        Identifies computers with unconstrained delegation and accounts/computers
+        with constrained delegation. Unconstrained delegation is high risk.
+    
+    .EXAMPLE
+        Get-KerberosDelegationIssues
+        Returns findings about Kerberos delegation configurations.
+    #>
     [CmdletBinding()]
     param()
-    # Unconstrained delegation on computers (TRUSTED_FOR_DELEGATION flag: 0x80000 = 524288)
-    $unconstrained = Get-ADComputer -LDAPFilter '(userAccountControl:1.2.840.113556.1.4.803:=524288)' -Properties userAccountControl, servicePrincipalName
-    # Accounts allowed to delegate to specific services (constrained)
-    $constrainedUsers = Get-ADUser -LDAPFilter '(msDS-AllowedToDelegateTo=*)' -Properties msDS-AllowedToDelegateTo
-    $constrainedComputers = Get-ADComputer -LDAPFilter '(msDS-AllowedToDelegateTo=*)' -Properties msDS-AllowedToDelegateTo
+    
+    Write-ADSHVerbose "Starting Kerberos delegation audit"
+    
+    try {
+        # Unconstrained delegation on computers (TRUSTED_FOR_DELEGATION flag: 0x80000 = 524288)
+        Write-ADSHVerbose "Querying computers with unconstrained delegation"
+        $unconstrained = Get-ADComputer -LDAPFilter '(userAccountControl:1.2.840.113556.1.4.803:=524288)' -Properties userAccountControl, servicePrincipalName -ErrorAction Stop
+        Write-ADSHVerbose "Found $($unconstrained.Count) computers with unconstrained delegation"
+        
+        # Accounts allowed to delegate to specific services (constrained)
+        Write-ADSHVerbose "Querying users with constrained delegation"
+        $constrainedUsers = Get-ADUser -LDAPFilter '(msDS-AllowedToDelegateTo=*)' -Properties msDS-AllowedToDelegateTo -ErrorAction Stop
+        Write-ADSHVerbose "Found $($constrainedUsers.Count) users with constrained delegation"
+        
+        Write-ADSHVerbose "Querying computers with constrained delegation"
+        $constrainedComputers = Get-ADComputer -LDAPFilter '(msDS-AllowedToDelegateTo=*)' -Properties msDS-AllowedToDelegateTo -ErrorAction Stop
+        Write-ADSHVerbose "Found $($constrainedComputers.Count) computers with constrained delegation"
 
-    $evidence = [pscustomobject]@{
-        UnconstrainedComputers = $unconstrained | Select-Object Name, DNSHostName, servicePrincipalName, DistinguishedName
-        ConstrainedUsers       = $constrainedUsers | Select-Object Name, SamAccountName, msDS-AllowedToDelegateTo
-        ConstrainedComputers   = $constrainedComputers | Select-Object Name, DNSHostName, msDS-AllowedToDelegateTo
+        $evidence = [pscustomobject]@{
+            UnconstrainedComputers = $unconstrained | Select-Object Name, DNSHostName, servicePrincipalName, DistinguishedName
+            ConstrainedUsers       = $constrainedUsers | Select-Object Name, SamAccountName, msDS-AllowedToDelegateTo
+            ConstrainedComputers   = $constrainedComputers | Select-Object Name, DNSHostName, msDS-AllowedToDelegateTo
+        }
+        
+        $sev = if ($unconstrained.Count -gt 0) { 'High' } else { 'Medium' }
+        
+        New-ADSHFinding -Category 'Security' -Id 'KERB-DELEG' -Severity $sev `
+            -Title "Kerberos delegation audit (unconstrained & constrained)" `
+            -Description "Unconstrained delegation is high risk; constrained delegation must be tightly scoped." `
+            -Evidence $evidence `
+            -Remediation "Remove unconstrained delegation. Restrict constrained delegation only to required services; prefer protocol transition off."
+    } catch {
+        Write-Warning "Failed to query Kerberos delegation: $($_.Exception.Message)"
+        Write-ADSHVerbose "Error querying delegation: $_"
+        
+        New-ADSHFinding -Category 'Security' -Id 'KERB-DELEG' -Severity 'Info' `
+            -Title "Kerberos delegation check failed" `
+            -Description "Unable to query delegation settings. Error: $($_.Exception.Message)" `
+            -Evidence $null `
+            -Remediation "Verify AD connectivity and permissions."
     }
-    $sev = if ($unconstrained.Count -gt 0) { 'High' } else { 'Medium' }
-    New-ADSHFinding -Category 'Security' -Id 'KERB-DELEG' -Severity $sev `
-        -Title "Kerberos delegation audit (unconstrained & constrained)" `
-        -Description "Unconstrained delegation is high risk; constrained delegation must be tightly scoped." `
-        -Evidence $evidence `
-        -Remediation "Remove unconstrained delegation. Restrict constrained delegation only to required services; prefer protocol transition off."
 }
 
 #endregion
@@ -587,16 +623,46 @@ function Get-KerberosDelegationIssues {
 #region 7. AdminSDHolder Protected Accounts
 
 function Get-AdminSDHolderProtectedAccounts {
+    <#
+    .SYNOPSIS
+        Identifies accounts protected by AdminSDHolder.
+    
+    .DESCRIPTION
+        Finds user accounts with adminCount=1, indicating they are or were members
+        of privileged groups and are protected by AdminSDHolder.
+    
+    .EXAMPLE
+        Get-AdminSDHolderProtectedAccounts
+        Returns findings about AdminSDHolder protected accounts.
+    #>
     [CmdletBinding()]
     param()
-    $protected = Get-ADUser -LDAPFilter '(adminCount=1)' -Properties adminCount, whenChanged, memberOf
-    $evidence = $protected | Select-Object Name, SamAccountName, whenChanged, memberOf, DistinguishedName
-    $sev = if ($protected.Count -gt 0) { 'Medium' } else { 'Info' }
-    New-ADSHFinding -Category 'Security' -Id 'ADMINSD' -Severity $sev `
-        -Title "AdminSDHolder protected accounts (adminCount=1)" `
-        -Description "Protected accounts do not inherit permissions; verify necessity to reduce persistence risks." `
-        -Evidence $evidence `
-        -Remediation "Remove privileged group membership if not needed; run SDProp reset and re-enable inheritance where appropriate."
+    
+    Write-ADSHVerbose "Starting AdminSDHolder protected accounts audit"
+    
+    try {
+        Write-ADSHVerbose "Querying accounts with adminCount=1"
+        $protected = Get-ADUser -LDAPFilter '(adminCount=1)' -Properties adminCount, whenChanged, memberOf -ErrorAction Stop
+        Write-ADSHVerbose "Found $($protected.Count) protected accounts"
+        
+        $evidence = $protected | Select-Object Name, SamAccountName, whenChanged, memberOf, DistinguishedName
+        $sev = if ($protected.Count -gt 0) { 'Medium' } else { 'Info' }
+        
+        New-ADSHFinding -Category 'Security' -Id 'ADMINSD' -Severity $sev `
+            -Title "AdminSDHolder protected accounts (adminCount=1)" `
+            -Description "Protected accounts do not inherit permissions; verify necessity to reduce persistence risks." `
+            -Evidence $evidence `
+            -Remediation "Remove privileged group membership if not needed; run SDProp reset and re-enable inheritance where appropriate."
+    } catch {
+        Write-Warning "Failed to query AdminSDHolder protected accounts: $($_.Exception.Message)"
+        Write-ADSHVerbose "Error querying protected accounts: $_"
+        
+        New-ADSHFinding -Category 'Security' -Id 'ADMINSD' -Severity 'Info' `
+            -Title "AdminSDHolder check failed" `
+            -Description "Unable to query protected accounts. Error: $($_.Exception.Message)" `
+            -Evidence $null `
+            -Remediation "Verify AD connectivity and permissions."
+    }
 }
 
 #endregion
@@ -604,18 +670,57 @@ function Get-AdminSDHolderProtectedAccounts {
 #region 8. Excessive Permissions/Delegations (ACL scan for sensitive groups)
 
 function Get-ExcessivePermissionsDelegations {
+    <#
+    .SYNOPSIS
+        Audits ACL permissions on sensitive objects for excessive rights.
+    
+    .DESCRIPTION
+        Examines ACLs on sensitive groups and objects for risky permissions like
+        GenericAll, WriteOwner, or WriteDacl that could enable privilege escalation.
+    
+    .PARAMETER Targets
+        Array of group names to check. Defaults to sensitive groups from configuration.
+    
+    .EXAMPLE
+        Get-ExcessivePermissionsDelegations
+        Checks ACLs on default sensitive groups.
+    
+    .EXAMPLE
+        Get-ExcessivePermissionsDelegations -Targets 'Domain Admins'
+        Checks ACLs on a specific group.
+    #>
     [CmdletBinding()]
     param(
+        [Parameter()]
+        [ValidateNotNullOrEmpty()]
         [string[]] $Targets
     )
-    $cfg = Get-ADSHConfig
-    if (-not $Targets) { $Targets = $cfg.SensitiveGroups }
+    
+    Write-ADSHVerbose "Starting excessive permissions/delegations audit"
+    
+    try {
+        $cfg = Get-ADSHConfig
+        if (-not $Targets) {
+            $Targets = $cfg.SensitiveGroups
+            Write-ADSHVerbose "Using default sensitive groups from configuration: $($Targets.Count) groups"
+        }
+    } catch {
+        Write-Warning "Failed to load configuration: $($_.Exception.Message)"
+        $Targets = @('Domain Admins', 'Enterprise Admins')
+    }
+    
     $findings = @()
+    
     foreach ($t in $Targets) {
+        Write-ADSHVerbose "Processing target: $t"
         try {
-            $grp = Get-ADGroup -Identity $t -Properties DistinguishedName
+            $grp = Get-ADGroup -Identity $t -Properties DistinguishedName -ErrorAction Stop
+            Write-ADSHVerbose "Found group: $($grp.DistinguishedName)"
+            
             $path = "AD:$($grp.DistinguishedName)"
             $acl = Get-Acl -Path $path -ErrorAction Stop
+            Write-ADSHVerbose "Retrieved ACL for $t"
+            
             $risky = @()
             foreach ($ace in $acl.Access) {
                 if ($ace.ActiveDirectoryRights -match 'GenericAll|WriteOwner|WriteDacl') {
@@ -627,6 +732,9 @@ function Get-ExcessivePermissionsDelegations {
                     }
                 }
             }
+            
+            Write-ADSHVerbose "Found $($risky.Count) risky ACEs on $t"
+            
             $sev = if ($risky.Count -gt 0) { 'High' } else { 'Info' }
             $findings += New-ADSHFinding -Category 'Security' -Id "ACL-$($grp.SamAccountName)" -Severity $sev `
                 -Title "Risky ACEs on sensitive object: $($grp.SamAccountName)" `
@@ -634,13 +742,18 @@ function Get-ExcessivePermissionsDelegations {
                 -Evidence $risky `
                 -Remediation "Restrict ACEs to admins; remove broad rights; implement tiering and just-in-time access."
         } catch {
+            Write-Warning "Failed to process target '$t': $($_.Exception.Message)"
+            Write-ADSHVerbose "Error processing target '$t': $_"
+            
             $findings += New-ADSHFinding -Category 'Security' -Id "ACL-$t" -Severity 'Info' `
                 -Title "ACL scan skipped (object not found): $t" `
-                -Description "Sensitive object may not exist in this domain." `
+                -Description "Sensitive object may not exist in this domain. Error: $($_.Exception.Message)" `
                 -Evidence $null `
                 -Remediation "Validate object name and domain."
         }
     }
+    
+    Write-ADSHVerbose "Completed ACL audit with $($findings.Count) findings"
     $findings
 }
 
@@ -649,38 +762,77 @@ function Get-ExcessivePermissionsDelegations {
 #region 9. DC Replication Status
 
 function Get-DCReplicationStatus {
+    <#
+    .SYNOPSIS
+        Checks domain controller replication status.
+    
+    .DESCRIPTION
+        Queries replication partner metadata for all domain controllers to identify
+        replication failures and latency issues.
+    
+    .EXAMPLE
+        Get-DCReplicationStatus
+        Returns findings about DC replication health.
+    #>
     [CmdletBinding()]
     param()
-    $dcs = Get-ADDomainController -Filter *
-    $evidence = @()
-    foreach ($dc in $dcs) {
-        try {
-            $meta = Get-ADReplicationPartnerMetadata -Target $dc.HostName -Scope Server -ErrorAction Stop
-            foreach ($m in $meta) {
+    
+    Write-ADSHVerbose "Starting DC replication status check"
+    
+    try {
+        Write-ADSHVerbose "Querying domain controllers"
+        $dcs = Get-ADDomainController -Filter * -ErrorAction Stop
+        Write-ADSHVerbose "Found $($dcs.Count) domain controllers"
+        
+        $evidence = @()
+        foreach ($dc in $dcs) {
+            Write-ADSHVerbose "Checking replication for DC: $($dc.HostName)"
+            try {
+                $meta = Get-ADReplicationPartnerMetadata -Target $dc.HostName -Scope Server -ErrorAction Stop
+                foreach ($m in $meta) {
+                    $evidence += [pscustomobject]@{
+                        SourceDC         = $m.Partner
+                        TargetDC         = $dc.HostName
+                        LastSuccess      = $m.LastReplicationSuccess
+                        LastFailure      = $m.LastReplicationFailure
+                        ConsecutiveFails = $m.ConsecutiveReplicationFailures
+                    }
+                }
+                Write-ADSHVerbose "Successfully retrieved replication metadata for $($dc.HostName)"
+            } catch {
+                Write-Warning "Failed to get replication metadata for $($dc.HostName): $($_.Exception.Message)"
+                Write-ADSHVerbose "Error querying replication for $($dc.HostName): $_"
+                
                 $evidence += [pscustomobject]@{
-                    SourceDC         = $m.Partner
+                    SourceDC         = $null
                     TargetDC         = $dc.HostName
-                    LastSuccess      = $m.LastReplicationSuccess
-                    LastFailure      = $m.LastReplicationFailure
-                    ConsecutiveFails = $m.ConsecutiveReplicationFailures
+                    LastSuccess      = $null
+                    LastFailure      = $_.Exception.Message
+                    ConsecutiveFails = $null
                 }
             }
-        } catch {
-            $evidence += [pscustomobject]@{
-                SourceDC         = $null
-                TargetDC         = $dc.HostName
-                LastSuccess      = $null
-                LastFailure      = $_.Exception.Message
-                ConsecutiveFails = $null
-            }
         }
+        
+        $failures = $evidence | Where-Object { $_.ConsecutiveFails -gt 0 }
+        Write-ADSHVerbose "Found $($failures.Count) DCs with replication failures"
+        
+        $sev = if ($failures) { 'High' } else { 'Info' }
+        
+        New-ADSHFinding -Category 'Health' -Id 'REPL' -Severity $sev `
+            -Title "Domain controller replication status" `
+            -Description "Replication failures and high latency impact consistency and security enforcement." `
+            -Evidence $evidence `
+            -Remediation "Investigate failing links with repadmin and event logs; fix DNS, connectivity, and AD sites."
+    } catch {
+        Write-Warning "Failed to query domain controllers: $($_.Exception.Message)"
+        Write-ADSHVerbose "Error querying DCs: $_"
+        
+        New-ADSHFinding -Category 'Health' -Id 'REPL' -Severity 'Info' `
+            -Title "DC replication check failed" `
+            -Description "Unable to query domain controllers. Error: $($_.Exception.Message)" `
+            -Evidence $null `
+            -Remediation "Verify AD connectivity and permissions."
     }
-    $sev = if ($evidence | Where-Object { $_.ConsecutiveFails -gt 0 }) { 'High' } else { 'Info' }
-    New-ADSHFinding -Category 'Health' -Id 'REPL' -Severity $sev `
-        -Title "Domain controller replication status" `
-        -Description "Replication failures and high latency impact consistency and security enforcement." `
-        -Evidence $evidence `
-        -Remediation "Investigate failing links with repadmin and event logs; fix DNS, connectivity, and AD sites."
 }
 
 #endregion
@@ -688,47 +840,108 @@ function Get-DCReplicationStatus {
 #region 10. DNS Health
 
 function Get-DNSHealth {
+    <#
+    .SYNOPSIS
+        Checks DNS health on domain controllers using dcdiag.
+    
+    .DESCRIPTION
+        Runs dcdiag DNS tests on all domain controllers to identify DNS issues
+        that could affect Active Directory functionality.
+    
+    .PARAMETER TimeoutSeconds
+        Timeout in seconds for each dcdiag test. Defaults to configuration value.
+    
+    .EXAMPLE
+        Get-DNSHealth
+        Checks DNS health with default timeout.
+    
+    .EXAMPLE
+        Get-DNSHealth -TimeoutSeconds 120
+        Checks DNS health with 120 second timeout.
+    #>
     [CmdletBinding()]
     param(
+        [Parameter()]
+        [ValidateRange(30, 600)]
         [int] $TimeoutSeconds
     )
-    $cfg = Get-ADSHConfig
-    if (-not $TimeoutSeconds) { $TimeoutSeconds = [int]$cfg.DNSDcDiagTimeoutSeconds }
-    $dcs = Get-ADDomainController -Filter * | Select-Object -ExpandProperty HostName
-    $evidence = @()
-    foreach ($dc in $dcs) {
-        $cmd = "dcdiag /s:$dc /test:DNS /v"
-        try {
-            $job = Start-Job -ScriptBlock { param($c) cmd.exe /c $c | Out-String } -ArgumentList $cmd
-            if (Wait-Job -Job $job -Timeout $TimeoutSeconds) {
-                $out = Receive-Job -Job $job
-                $evidence += [pscustomobject]@{
-                    DC     = $dc
-                    Output = $out
-                    Passed = ($out -notmatch 'FAIL|error')
+    
+    Write-ADSHVerbose "Starting DNS health check"
+    
+    try {
+        $cfg = Get-ADSHConfig
+        if (-not $TimeoutSeconds) {
+            $TimeoutSeconds = [int]$cfg.DNSDcDiagTimeoutSeconds
+            Write-ADSHVerbose "Using timeout from configuration: $TimeoutSeconds seconds"
+        }
+    } catch {
+        Write-Warning "Failed to load configuration, using default timeout of 180 seconds"
+        $TimeoutSeconds = 180
+    }
+    
+    try {
+        Write-ADSHVerbose "Querying domain controllers"
+        $dcs = Get-ADDomainController -Filter * -ErrorAction Stop | Select-Object -ExpandProperty HostName
+        Write-ADSHVerbose "Found $($dcs.Count) domain controllers"
+        
+        $evidence = @()
+        foreach ($dc in $dcs) {
+            Write-ADSHVerbose "Running DNS check for DC: $dc (timeout: $TimeoutSeconds seconds)"
+            $cmd = "dcdiag /s:$dc /test:DNS /v"
+            try {
+                $job = Start-Job -ScriptBlock { param($c) cmd.exe /c $c | Out-String } -ArgumentList $cmd
+                if (Wait-Job -Job $job -Timeout $TimeoutSeconds) {
+                    $out = Receive-Job -Job $job
+                    $passed = ($out -notmatch 'FAIL|error')
+                    $evidence += [pscustomobject]@{
+                        DC     = $dc
+                        Output = $out
+                        Passed = $passed
+                    }
+                    Write-ADSHVerbose "DNS check for $dc completed: Passed=$passed"
+                } else {
+                    Stop-Job $job | Out-Null
+                    Remove-Job $job -Force -ErrorAction SilentlyContinue
+                    $evidence += [pscustomobject]@{
+                        DC     = $dc
+                        Output = 'Timeout'
+                        Passed = $false
+                    }
+                    Write-ADSHVerbose "DNS check for $dc timed out"
                 }
-            } else {
-                Stop-Job $job | Out-Null
+                Remove-Job $job -Force -ErrorAction SilentlyContinue
+            } catch {
+                Write-Warning "Failed DNS check for $dc`: $($_.Exception.Message)"
+                Write-ADSHVerbose "Error running DNS check for $dc`: $_"
+                
                 $evidence += [pscustomobject]@{
                     DC     = $dc
-                    Output = 'Timeout'
+                    Output = $_.Exception.Message
                     Passed = $false
                 }
             }
-        } catch {
-            $evidence += [pscustomobject]@{
-                DC     = $dc
-                Output = $_.Exception.Message
-                Passed = $false
-            }
         }
+        
+        $failures = $evidence | Where-Object { -not $_.Passed }
+        Write-ADSHVerbose "Found $($failures.Count) DCs with DNS issues"
+        
+        $sev = if ($failures) { 'High' } else { 'Info' }
+        
+        New-ADSHFinding -Category 'Health' -Id 'DNS' -Severity $sev `
+            -Title "DNS health via dcdiag" `
+            -Description "AD-integrated DNS issues cause authentication and replication failures." `
+            -Evidence $evidence `
+            -Remediation "Resolve zone errors, stale records, and delegation issues; ensure DCs register SRV records."
+    } catch {
+        Write-Warning "Failed to check DNS health: $($_.Exception.Message)"
+        Write-ADSHVerbose "Error checking DNS: $_"
+        
+        New-ADSHFinding -Category 'Health' -Id 'DNS' -Severity 'Info' `
+            -Title "DNS health check failed" `
+            -Description "Unable to run DNS checks. Error: $($_.Exception.Message)" `
+            -Evidence $null `
+            -Remediation "Verify AD connectivity and permissions."
     }
-    $sev = if ($evidence | Where-Object { -not $_.Passed }) { 'High' } else { 'Info' }
-    New-ADSHFinding -Category 'Health' -Id 'DNS' -Severity $sev `
-        -Title "DNS health via dcdiag" `
-        -Description "AD-integrated DNS issues cause authentication and replication failures." `
-        -Evidence $evidence `
-        -Remediation "Resolve zone errors, stale records, and delegation issues; ensure DCs register SRV records."
 }
 
 #endregion
@@ -736,30 +949,93 @@ function Get-DNSHealth {
 #region 11. SYSVOL Replication
 
 function Get-SYSVOLReplicationStatus {
+    <#
+    .SYNOPSIS
+        Checks SYSVOL replication service status across domain controllers.
+    
+    .DESCRIPTION
+        Verifies whether domain controllers are using DFSR or deprecated FRS for
+        SYSVOL replication. FRS is deprecated and should be migrated to DFSR.
+    
+    .PARAMETER RequireDFSR
+        When true, flags FRS usage as high severity. Defaults to configuration value.
+    
+    .EXAMPLE
+        Get-SYSVOLReplicationStatus
+        Checks SYSVOL replication using default configuration.
+    
+    .EXAMPLE
+        Get-SYSVOLReplicationStatus -RequireDFSR $true
+        Requires DFSR and flags FRS as high severity.
+    #>
     [CmdletBinding()]
     param(
+        [Parameter()]
         [bool] $RequireDFSR
     )
-    $cfg = Get-ADSHConfig
-    if ($PSBoundParameters.ContainsKey('RequireDFSR') -eq $false) { $RequireDFSR = [bool]$cfg.SysvolRequireDFSR }
-    $dcs = Get-ADDomainController -Filter *
-    $evidence = foreach ($dc in $dcs) {
-        $services = Invoke-Command -ComputerName $dc.HostName -ScriptBlock {
-            Get-Service -Name 'DFSR','NtFrs' -ErrorAction SilentlyContinue | Select-Object Name, Status
-        } -ErrorAction SilentlyContinue
-        [pscustomobject]@{
-            DC          = $dc.HostName
-            DFSRStatus  = ($services | Where-Object {$_.Name -eq 'DFSR'}).Status
-            FRSStatus   = ($services | Where-Object {$_.Name -eq 'NtFrs'}).Status
+    
+    Write-ADSHVerbose "Starting SYSVOL replication status check"
+    
+    try {
+        $cfg = Get-ADSHConfig
+        if ($PSBoundParameters.ContainsKey('RequireDFSR') -eq $false) {
+            $RequireDFSR = [bool]$cfg.SysvolRequireDFSR
+            Write-ADSHVerbose "Using RequireDFSR from configuration: $RequireDFSR"
         }
+    } catch {
+        Write-Warning "Failed to load configuration, defaulting to RequireDFSR=$true"
+        $RequireDFSR = $true
     }
-    $frsActive = $evidence | Where-Object { $_.FRSStatus -eq 'Running' }
-    $sev = if ($RequireDFSR -and $frsActive) { 'High' } else { 'Medium' }
-    New-ADSHFinding -Category 'Health' -Id 'SYSVOL' -Severity $sev `
-        -Title "SYSVOL replication service status (DFSR vs FRS)" `
-        -Description "FRS is deprecated; DFSR is required. Confirm replication health and migration status." `
-        -Evidence $evidence `
-        -Remediation "Migrate SYSVOL from FRS to DFSR; validate DFSR connections and backlog with dfsrdiag."
+    
+    try {
+        Write-ADSHVerbose "Querying domain controllers"
+        $dcs = Get-ADDomainController -Filter * -ErrorAction Stop
+        Write-ADSHVerbose "Found $($dcs.Count) domain controllers"
+        
+        $evidence = foreach ($dc in $dcs) {
+            Write-ADSHVerbose "Checking SYSVOL replication services on: $($dc.HostName)"
+            try {
+                $services = Invoke-Command -ComputerName $dc.HostName -ScriptBlock {
+                    Get-Service -Name 'DFSR','NtFrs' -ErrorAction SilentlyContinue | Select-Object Name, Status
+                } -ErrorAction Stop
+                
+                [pscustomobject]@{
+                    DC          = $dc.HostName
+                    DFSRStatus  = ($services | Where-Object {$_.Name -eq 'DFSR'}).Status
+                    FRSStatus   = ($services | Where-Object {$_.Name -eq 'NtFrs'}).Status
+                }
+            } catch {
+                Write-Warning "Failed to query services on $($dc.HostName): $($_.Exception.Message)"
+                Write-ADSHVerbose "Error querying services on $($dc.HostName): $_"
+                
+                [pscustomobject]@{
+                    DC          = $dc.HostName
+                    DFSRStatus  = "Error: $($_.Exception.Message)"
+                    FRSStatus   = $null
+                }
+            }
+        }
+        
+        $frsActive = $evidence | Where-Object { $_.FRSStatus -eq 'Running' }
+        Write-ADSHVerbose "Found $($frsActive.Count) DCs running FRS"
+        
+        $sev = if ($RequireDFSR -and $frsActive) { 'High' } else { 'Medium' }
+        
+        New-ADSHFinding -Category 'Health' -Id 'SYSVOL' -Severity $sev `
+            -Title "SYSVOL replication service status (DFSR vs FRS)" `
+            -Description "FRS is deprecated; DFSR is required. Confirm replication health and migration status." `
+            -Evidence $evidence `
+            -Remediation "Migrate SYSVOL from FRS to DFSR; validate DFSR connections and backlog with dfsrdiag."
+    } catch {
+        Write-Warning "Failed to check SYSVOL replication: $($_.Exception.Message)"
+        Write-ADSHVerbose "Error checking SYSVOL: $_"
+        
+        New-ADSHFinding -Category 'Health' -Id 'SYSVOL' -Severity 'Info' `
+            -Title "SYSVOL replication check failed" `
+            -Description "Unable to query SYSVOL replication status. Error: $($_.Exception.Message)" `
+            -Evidence $null `
+            -Remediation "Verify AD connectivity and permissions."
+    }
 }
 
 #endregion
@@ -767,22 +1043,53 @@ function Get-SYSVOLReplicationStatus {
 #region 12. FSMO Role Holders
 
 function Get-FSMORoleHolders {
+    <#
+    .SYNOPSIS
+        Retrieves current FSMO role holders.
+    
+    .DESCRIPTION
+        Identifies which domain controllers hold the five FSMO roles:
+        Schema Master, Domain Naming Master, RID Master, PDC Emulator, and Infrastructure Master.
+    
+    .EXAMPLE
+        Get-FSMORoleHolders
+        Returns findings listing current FSMO role holders.
+    #>
     [CmdletBinding()]
     param()
-    $domain = Get-ADDomain
-    $forest = Get-ADForest
-    $evidence = [pscustomobject]@{
-        DomainNamingMaster     = $forest.DomainNamingMaster
-        SchemaMaster           = $forest.SchemaMaster
-        RIDMaster              = $domain.RIDMaster
-        PDCEmulator            = $domain.PDCEmulator
-        InfrastructureMaster   = $domain.InfrastructureMaster
+    
+    Write-ADSHVerbose "Starting FSMO role holders check"
+    
+    try {
+        Write-ADSHVerbose "Querying domain and forest information"
+        $domain = Get-ADDomain -ErrorAction Stop
+        $forest = Get-ADForest -ErrorAction Stop
+        
+        $evidence = [pscustomobject]@{
+            DomainNamingMaster     = $forest.DomainNamingMaster
+            SchemaMaster           = $forest.SchemaMaster
+            RIDMaster              = $domain.RIDMaster
+            PDCEmulator            = $domain.PDCEmulator
+            InfrastructureMaster   = $domain.InfrastructureMaster
+        }
+        
+        Write-ADSHVerbose "FSMO roles identified - Schema: $($forest.SchemaMaster), PDC: $($domain.PDCEmulator)"
+        
+        New-ADSHFinding -Category 'Health' -Id 'FSMO' -Severity 'Info' `
+            -Title "FSMO role holders" `
+            -Description "Record current role holders to confirm availability and placement." `
+            -Evidence $evidence `
+            -Remediation "Ensure role holders are online, backed up, and placed appropriately per sites and capacity."
+    } catch {
+        Write-Warning "Failed to query FSMO roles: $($_.Exception.Message)"
+        Write-ADSHVerbose "Error querying FSMO roles: $_"
+        
+        New-ADSHFinding -Category 'Health' -Id 'FSMO' -Severity 'Info' `
+            -Title "FSMO role holders check failed" `
+            -Description "Unable to query FSMO roles. Error: $($_.Exception.Message)" `
+            -Evidence $null `
+            -Remediation "Verify AD connectivity and permissions."
     }
-    New-ADSHFinding -Category 'Health' -Id 'FSMO' -Severity 'Info' `
-        -Title "FSMO role holders" `
-        -Description "Record current role holders to confirm availability and placement." `
-        -Evidence $evidence `
-        -Remediation "Ensure role holders are online, backed up, and placed appropriately per sites and capacity."
 }
 
 #endregion
@@ -790,30 +1097,93 @@ function Get-FSMORoleHolders {
 #region 13. DC Service Status
 
 function Get-DCServiceStatus {
+    <#
+    .SYNOPSIS
+        Checks critical service status on domain controllers.
+    
+    .DESCRIPTION
+        Queries the status of critical AD services (NTDS, KDC, DNS, etc.) on all
+        domain controllers to identify service failures.
+    
+    .PARAMETER Services
+        Array of service names to check. Defaults to critical services from configuration.
+    
+    .EXAMPLE
+        Get-DCServiceStatus
+        Checks default critical services.
+    
+    .EXAMPLE
+        Get-DCServiceStatus -Services 'NTDS','KDC'
+        Checks specific services.
+    #>
     [CmdletBinding()]
     param(
+        [Parameter()]
+        [ValidateNotNullOrEmpty()]
         [string[]] $Services
     )
-    $cfg = Get-ADSHConfig
-    if (-not $Services) { $Services = $cfg.CriticalServices }
-    $dcs = Get-ADDomainController -Filter * | Select-Object -ExpandProperty HostName
-    $evidence = foreach ($dc in $dcs) {
-        $svc = Invoke-Command -ComputerName $dc -ScriptBlock {
-            param($names)
-            Get-Service -Name $names -ErrorAction SilentlyContinue | Select-Object Name, Status
-        } -ArgumentList ($Services) -ErrorAction SilentlyContinue
-        [pscustomobject]@{
-            DC       = $dc
-            Services = $svc
+    
+    Write-ADSHVerbose "Starting DC service status check"
+    
+    try {
+        $cfg = Get-ADSHConfig
+        if (-not $Services) {
+            $Services = $cfg.CriticalServices
+            Write-ADSHVerbose "Using critical services from configuration: $($Services -join ', ')"
         }
+    } catch {
+        Write-Warning "Failed to load configuration: $($_.Exception.Message)"
+        $Services = @('NTDS','KDC','DNS','Netlogon')
     }
-    $down = $evidence | Where-Object { $_.Services | Where-Object { $_.Status -ne 'Running' } }
-    $sev = if ($down) { 'High' } else { 'Info' }
-    New-ADSHFinding -Category 'Health' -Id 'DC-SVC' -Severity $sev `
-        -Title "Domain controller critical service status" `
-        -Description "Critical DC services must be running for authentication and replication." `
-        -Evidence $evidence `
-        -Remediation "Start services or troubleshoot failures; check event logs and configuration."
+    
+    try {
+        Write-ADSHVerbose "Querying domain controllers"
+        $dcs = Get-ADDomainController -Filter * -ErrorAction Stop | Select-Object -ExpandProperty HostName
+        Write-ADSHVerbose "Found $($dcs.Count) domain controllers"
+        
+        $evidence = foreach ($dc in $dcs) {
+            Write-ADSHVerbose "Checking services on: $dc"
+            try {
+                $svc = Invoke-Command -ComputerName $dc -ScriptBlock {
+                    param($names)
+                    Get-Service -Name $names -ErrorAction SilentlyContinue | Select-Object Name, Status
+                } -ArgumentList (,$Services) -ErrorAction Stop
+                
+                [pscustomobject]@{
+                    DC       = $dc
+                    Services = $svc
+                }
+            } catch {
+                Write-Warning "Failed to query services on $dc`: $($_.Exception.Message)"
+                Write-ADSHVerbose "Error querying services on $dc`: $_"
+                
+                [pscustomobject]@{
+                    DC       = $dc
+                    Services = @([pscustomobject]@{ Name = 'Error'; Status = $_.Exception.Message })
+                }
+            }
+        }
+        
+        $down = $evidence | Where-Object { $_.Services | Where-Object { $_.Status -ne 'Running' } }
+        Write-ADSHVerbose "Found $($down.Count) DCs with service issues"
+        
+        $sev = if ($down) { 'High' } else { 'Info' }
+        
+        New-ADSHFinding -Category 'Health' -Id 'DC-SVC' -Severity $sev `
+            -Title "Domain controller critical service status" `
+            -Description "Critical DC services must be running for authentication and replication." `
+            -Evidence $evidence `
+            -Remediation "Start services or troubleshoot failures; check event logs and configuration."
+    } catch {
+        Write-Warning "Failed to check DC service status: $($_.Exception.Message)"
+        Write-ADSHVerbose "Error checking services: $_"
+        
+        New-ADSHFinding -Category 'Health' -Id 'DC-SVC' -Severity 'Info' `
+            -Title "DC service status check failed" `
+            -Description "Unable to query DC services. Error: $($_.Exception.Message)" `
+            -Evidence $null `
+            -Remediation "Verify AD connectivity and permissions."
+    }
 }
 
 #endregion
