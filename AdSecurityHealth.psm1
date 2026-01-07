@@ -975,7 +975,7 @@ function Get-SYSVOLReplicationStatus {
     
     try {
         $cfg = Get-ADSHConfig
-        if ($PSBoundParameters.ContainsKey('RequireDFSR') -eq $false) {
+        if (-not $PSBoundParameters.ContainsKey('RequireDFSR')) {
             $RequireDFSR = [bool]$cfg.SysvolRequireDFSR
             Write-ADSHVerbose "Using RequireDFSR from configuration: $RequireDFSR"
         }
@@ -1143,7 +1143,7 @@ function Get-DCServiceStatus {
                 $svc = Invoke-Command -ComputerName $dc -ScriptBlock {
                     param($names)
                     Get-Service -Name $names -ErrorAction SilentlyContinue | Select-Object Name, Status
-                } -ArgumentList (,$Services) -ErrorAction Stop  # Comma operator ensures array is passed as single argument
+                } -ArgumentList (,$Services) -ErrorAction Stop  # Use comma operator to ensure array is passed as a single argument instead of splatting
                 
                 [pscustomobject]@{
                     DC       = $dc
