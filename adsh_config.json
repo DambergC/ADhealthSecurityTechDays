@@ -1,0 +1,26 @@
+{
+  "StaleDays": 90,
+  "ReplicationMaxLatencyMinutes": 60,
+  "EventLogMinSizeMB": 2048,
+  "AlertEmail": "",
+  "SensitiveGroups": [
+    "Domain Admins",
+    "Enterprise Admins",
+    "Schema Admins",
+    "Administrators",
+    "Backup Operators",
+    "Account Operators",
+    "Server Operators",
+    "Print Operators"
+  ],
+  "CriticalServices": [
+    "NTDS",
+    "KDC",
+    "DNS",
+    "Netlogon",
+    "LanmanServer",
+    "DFSR"
+  ],
+  "DNSDcDiagTimeoutSeconds": 180,
+  "SysvolRequireDFSR": true
+}
