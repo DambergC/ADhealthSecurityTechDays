@@ -2,6 +2,14 @@
 
 A PowerShell toolkit to monitor Active Directory security and health, inspired by PingCastle checks. Includes 20 functions covering privileged membership, stale accounts, password policy, delegation, replication, DNS/SYSVOL health, trusts, GPOs, SPNs, audit policies, and event log configuration.
 
+## Features
+
+- **Comprehensive Comment-Based Help**: All functions include detailed synopsis, description, parameters, and examples
+- **Robust Error Handling**: Try-catch blocks throughout with graceful degradation
+- **Detailed Logging**: Verbose logging using Write-ADSHVerbose for troubleshooting
+- **Parameter Validation**: ValidateSet, ValidateRange, and ValidateNotNullOrEmpty attributes
+- **Unit Tests**: Pester tests included for validation of core functionality
+
 ## Prerequisites
 
 - Windows PowerShell 5.1 (or PowerShell 7 with Windows remoting)
@@ -22,6 +30,25 @@ Import-Module .\ADSecurityHealth.psm1
 ```
 
 3. Optional: Adjust thresholds in `adsh-config.json`.
+
+## Testing
+
+Run the included Pester tests to validate functionality:
+
+```powershell
+# Install Pester if needed
+Install-Module -Name Pester -Force -SkipPublisherCheck
+
+# Run tests
+Invoke-Pester -Path .\AdSecurityHealth.Tests.ps1
+```
+
+Tests cover:
+- Helper function validation
+- Parameter validation ranges
+- Error handling scenarios
+- Module structure and documentation
+- Integration testing with mocked AD cmdlets
 
 ## Usage
 
