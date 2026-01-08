@@ -1,308 +1,308 @@
-﻿[
-    {
-        "Timestamp":  "2026-01-07T11:08:52.8263237+01:00",
-        "Category":  "Security",
-        "Id":  "PRIV-Domain Admins",
-        "Severity":  "Info",
-        "Title":  "Privileged group not found: Domain Admins",
-        "Description":  "Group may not exist in this domain.",
-        "Remediation":  "Validate domain scope and name."
-    },
-    {
-        "Timestamp":  "2026-01-07T11:08:52.8263237+01:00",
-        "Category":  "Security",
-        "Id":  "PRIV-Enterprise Admins",
-        "Severity":  "Info",
-        "Title":  "Privileged group not found: Enterprise Admins",
-        "Description":  "Group may not exist in this domain.",
-        "Remediation":  "Validate domain scope and name."
-    },
-    {
-        "Timestamp":  "2026-01-07T11:08:52.8263237+01:00",
-        "Category":  "Security",
-        "Id":  "PRIV-Schema Admins",
-        "Severity":  "Info",
-        "Title":  "Privileged group not found: Schema Admins",
-        "Description":  "Group may not exist in this domain.",
-        "Remediation":  "Validate domain scope and name."
-    },
-    {
-        "Timestamp":  "2026-01-07T11:08:52.8263237+01:00",
-        "Category":  "Security",
-        "Id":  "PRIV-Administrators",
-        "Severity":  "Info",
-        "Title":  "Privileged group not found: Administrators",
-        "Description":  "Group may not exist in this domain.",
-        "Remediation":  "Validate domain scope and name."
-    },
-    {
-        "Timestamp":  "2026-01-07T11:08:52.8274034+01:00",
-        "Category":  "Security",
-        "Id":  "PRIV-Backup Operators",
-        "Severity":  "Info",
-        "Title":  "Privileged group not found: Backup Operators",
-        "Description":  "Group may not exist in this domain.",
-        "Remediation":  "Validate domain scope and name."
-    },
-    {
-        "Timestamp":  "2026-01-07T11:08:52.8274034+01:00",
-        "Category":  "Security",
-        "Id":  "PRIV-Account Operators",
-        "Severity":  "Info",
-        "Title":  "Privileged group not found: Account Operators",
-        "Description":  "Group may not exist in this domain.",
-        "Remediation":  "Validate domain scope and name."
-    },
-    {
-        "Timestamp":  "2026-01-07T11:08:52.8274034+01:00",
-        "Category":  "Security",
-        "Id":  "PRIV-Server Operators",
-        "Severity":  "Info",
-        "Title":  "Privileged group not found: Server Operators",
-        "Description":  "Group may not exist in this domain.",
-        "Remediation":  "Validate domain scope and name."
-    },
-    {
-        "Timestamp":  "2026-01-07T11:08:52.8283130+01:00",
-        "Category":  "Security",
-        "Id":  "PRIV-Print Operators",
-        "Severity":  "Info",
-        "Title":  "Privileged group not found: Print Operators",
-        "Description":  "Group may not exist in this domain.",
-        "Remediation":  "Validate domain scope and name."
-    },
-    {
-        "Timestamp":  "2026-01-07T11:08:52.8957606+01:00",
-        "Category":  "Hygiene",
-        "Id":  "STALE-ACCOUNTS",
-        "Severity":  "Medium",
-        "Title":  "Stale enabled user accounts (\u003e90 days)",
-        "Description":  "Enabled accounts with no recent logon increase attack surface.",
-        "Remediation":  "Disable or remove stale accounts. Implement lifecycle automation and time-bound access."
-    },
-    {
-        "Timestamp":  "2026-01-07T11:08:52.9415639+01:00",
-        "Category":  "Policy",
-        "Id":  "PWD-POLICY",
-        "Severity":  "Medium",
-        "Title":  "Password policy audit (domain + FGPP)",
-        "Description":  "Reviews domain and fine-grained password policies for strength and reversible encryption.",
-        "Remediation":  "Set MinLength \u003e= 14+ or prefer passphrases. Enable complexity. Disable reversible encryption. Consider AAD/SSO and MFA."
-    },
-    {
-        "Timestamp":  "2026-01-07T11:08:52.9573183+01:00",
-        "Category":  "Security",
-        "Id":  "PWD-NEVER-EXPIRES",
-        "Severity":  "Info",
-        "Title":  "Enabled accounts with password set to never expire",
-        "Description":  "Service or privileged accounts with non-expiring passwords increase risk.",
-        "Remediation":  "Migrate to gMSA or vault-managed secrets; enforce rotation via policy or automation."
-    },
-    {
-        "Timestamp":  "2026-01-07T11:08:52.9728215+01:00",
-        "Category":  "Policy",
-        "Id":  "REV-ENC",
-        "Severity":  "Info",
-        "Title":  "Reversible password encryption enabled in FGPP",
-        "Description":  "Storing passwords with reversible encryption significantly weakens security.",
-        "Remediation":  "Disable reversible encryption in all password policies. Validate via Group Policy \u0027Accounts: Store passwords using reversible encryption\u0027."
-    },
-    {
-        "Timestamp":  "2026-01-07T11:08:53.0091863+01:00",
-        "Category":  "Security",
-        "Id":  "KERB-DELEG",
-        "Severity":  "Medium",
-        "Title":  "Kerberos delegation audit (unconstrained \u0026 constrained)",
-        "Description":  "Unconstrained delegation is high risk; constrained delegation must be tightly scoped.",
-        "Remediation":  "Remove unconstrained delegation. Restrict constrained delegation only to required services; prefer protocol transition off."
-    },
-    {
-        "Timestamp":  "2026-01-07T11:08:53.0383977+01:00",
-        "Category":  "Security",
-        "Id":  "ADMINSD",
-        "Severity":  "Medium",
-        "Title":  "AdminSDHolder protected accounts (adminCount=1)",
-        "Description":  "Protected accounts do not inherit permissions; verify necessity to reduce persistence risks.",
-        "Remediation":  "Remove privileged group membership if not needed; run SDProp reset and re-enable inheritance where appropriate."
-    },
-    {
-        "Timestamp":  "2026-01-07T11:08:53.0821191+01:00",
-        "Category":  "Security",
-        "Id":  "ACL-Domain Admins",
-        "Severity":  "High",
-        "Title":  "Risky ACEs on sensitive object: Domain Admins",
-        "Description":  "High-privilege ACEs (GenericAll/WriteOwner/WriteDacl) may enable escalation.",
-        "Remediation":  "Restrict ACEs to admins; remove broad rights; implement tiering and just-in-time access."
-    },
-    {
-        "Timestamp":  "2026-01-07T11:08:53.1144669+01:00",
-        "Category":  "Security",
-        "Id":  "ACL-Enterprise Admins",
-        "Severity":  "High",
-        "Title":  "Risky ACEs on sensitive object: Enterprise Admins",
-        "Description":  "High-privilege ACEs (GenericAll/WriteOwner/WriteDacl) may enable escalation.",
-        "Remediation":  "Restrict ACEs to admins; remove broad rights; implement tiering and just-in-time access."
-    },
-    {
-        "Timestamp":  "2026-01-07T11:08:53.1541190+01:00",
-        "Category":  "Security",
-        "Id":  "ACL-Schema Admins",
-        "Severity":  "High",
-        "Title":  "Risky ACEs on sensitive object: Schema Admins",
-        "Description":  "High-privilege ACEs (GenericAll/WriteOwner/WriteDacl) may enable escalation.",
-        "Remediation":  "Restrict ACEs to admins; remove broad rights; implement tiering and just-in-time access."
-    },
-    {
-        "Timestamp":  "2026-01-07T11:08:53.1886518+01:00",
-        "Category":  "Security",
-        "Id":  "ACL-Administrators",
-        "Severity":  "High",
-        "Title":  "Risky ACEs on sensitive object: Administrators",
-        "Description":  "High-privilege ACEs (GenericAll/WriteOwner/WriteDacl) may enable escalation.",
-        "Remediation":  "Restrict ACEs to admins; remove broad rights; implement tiering and just-in-time access."
-    },
-    {
-        "Timestamp":  "2026-01-07T11:08:53.2258171+01:00",
-        "Category":  "Security",
-        "Id":  "ACL-Backup Operators",
-        "Severity":  "High",
-        "Title":  "Risky ACEs on sensitive object: Backup Operators",
-        "Description":  "High-privilege ACEs (GenericAll/WriteOwner/WriteDacl) may enable escalation.",
-        "Remediation":  "Restrict ACEs to admins; remove broad rights; implement tiering and just-in-time access."
-    },
-    {
-        "Timestamp":  "2026-01-07T11:08:53.2652069+01:00",
-        "Category":  "Security",
-        "Id":  "ACL-Account Operators",
-        "Severity":  "High",
-        "Title":  "Risky ACEs on sensitive object: Account Operators",
-        "Description":  "High-privilege ACEs (GenericAll/WriteOwner/WriteDacl) may enable escalation.",
-        "Remediation":  "Restrict ACEs to admins; remove broad rights; implement tiering and just-in-time access."
-    },
-    {
-        "Timestamp":  "2026-01-07T11:08:53.2964287+01:00",
-        "Category":  "Security",
-        "Id":  "ACL-Server Operators",
-        "Severity":  "High",
-        "Title":  "Risky ACEs on sensitive object: Server Operators",
-        "Description":  "High-privilege ACEs (GenericAll/WriteOwner/WriteDacl) may enable escalation.",
-        "Remediation":  "Restrict ACEs to admins; remove broad rights; implement tiering and just-in-time access."
-    },
-    {
-        "Timestamp":  "2026-01-07T11:08:53.3370010+01:00",
-        "Category":  "Security",
-        "Id":  "ACL-Print Operators",
-        "Severity":  "High",
-        "Title":  "Risky ACEs on sensitive object: Print Operators",
-        "Description":  "High-privilege ACEs (GenericAll/WriteOwner/WriteDacl) may enable escalation.",
-        "Remediation":  "Restrict ACEs to admins; remove broad rights; implement tiering and just-in-time access."
-    },
-    {
-        "Timestamp":  "2026-01-07T11:08:53.3715232+01:00",
-        "Category":  "Health",
-        "Id":  "REPL",
-        "Severity":  "Info",
-        "Title":  "Domain controller replication status",
-        "Description":  "Replication failures and high latency impact consistency and security enforcement.",
-        "Remediation":  "Investigate failing links with repadmin and event logs; fix DNS, connectivity, and AD sites."
-    },
-    {
-        "Timestamp":  "2026-01-07T11:09:27.8357067+01:00",
-        "Category":  "Health",
-        "Id":  "DNS",
-        "Severity":  "High",
-        "Title":  "DNS health via dcdiag",
-        "Description":  "AD-integrated DNS issues cause authentication and replication failures.",
-        "Remediation":  "Resolve zone errors, stale records, and delegation issues; ensure DCs register SRV records."
-    },
-    {
-        "Timestamp":  "2026-01-07T11:09:28.0675866+01:00",
-        "Category":  "Health",
-        "Id":  "SYSVOL",
-        "Severity":  "Medium",
-        "Title":  "SYSVOL replication service status (DFSR vs FRS)",
-        "Description":  "FRS is deprecated; DFSR is required. Confirm replication health and migration status.",
-        "Remediation":  "Migrate SYSVOL from FRS to DFSR; validate DFSR connections and backlog with dfsrdiag."
-    },
-    {
-        "Timestamp":  "2026-01-07T11:09:28.1441851+01:00",
-        "Category":  "Health",
-        "Id":  "FSMO",
-        "Severity":  "Info",
-        "Title":  "FSMO role holders",
-        "Description":  "Record current role holders to confirm availability and placement.",
-        "Remediation":  "Ensure role holders are online, backed up, and placed appropriately per sites and capacity."
-    },
-    {
-        "Timestamp":  "2026-01-07T11:09:28.3686770+01:00",
-        "Category":  "Health",
-        "Id":  "DC-SVC",
-        "Severity":  "High",
-        "Title":  "Domain controller critical service status",
-        "Description":  "Critical DC services must be running for authentication and replication.",
-        "Remediation":  "Start services or troubleshoot failures; check event logs and configuration."
-    },
-    {
-        "Timestamp":  "2026-01-07T11:09:28.7743574+01:00",
-        "Category":  "Capacity",
-        "Id":  "NTDS",
-        "Severity":  "Info",
-        "Title":  "AD database (ntds.dit) size per DC",
-        "Description":  "Track AD DB size for capacity planning; monitor sudden growth.",
-        "Remediation":  "Ensure sufficient disk space and regular backups; defragment offline if required by Microsoft guidance."
-    },
-    {
-        "Timestamp":  "2026-01-07T11:09:28.7885466+01:00",
-        "Category":  "Exposure",
-        "Id":  "TRUSTS",
-        "Severity":  "Info",
-        "Title":  "Domain and forest trust relationships",
-        "Description":  "Review external and forest trusts; validate SID filtering and selective authentication.",
-        "Remediation":  "Remove obsolete trusts; enable SID filtering; use selective authentication for external trusts."
-    },
-    {
-        "Timestamp":  "2026-01-07T11:09:29.0084262+01:00",
-        "Category":  "Configuration",
-        "Id":  "GPO",
-        "Severity":  "Info",
-        "Title":  "GPO review (orphaned and security filtering)",
-        "Description":  "Identify orphaned GPOs and review security filtering for over-permission.",
-        "Remediation":  "Delete or archive unused GPOs; tighten GPO permissions and links; document GPO ownership."
-    },
-    {
-        "Timestamp":  "2026-01-07T11:09:29.0540966+01:00",
-        "Category":  "Security",
-        "Id":  "PREWIN2000",
-        "Severity":  "Info",
-        "Title":  "Pre-Windows 2000 Compatible Access membership",
-        "Description":  "Membership here broadens read access; review for legacy needs only.",
-        "Remediation":  "Remove unnecessary principals; ensure legacy apps are updated."
-    },
-    {
-        "Timestamp":  "2026-01-07T11:09:29.1312177+01:00",
-        "Category":  "Security",
-        "Id":  "SPN",
-        "Severity":  "Info",
-        "Title":  "SPN audit (duplicate SPNs \u0026 ownership)",
-        "Description":  "Duplicate SPNs cause auth conflicts; SPNs on user accounts increase Kerberoasting risk.",
-        "Remediation":  " Duplicates = $dupes; AllSPNs = $allSpns "
-    },
-    {
-        "Timestamp":  "2026-01-07T11:09:29.4819302+01:00",
-        "Category":  "Monitoring",
-        "Id":  "AUDITPOL",
-        "Severity":  "Info",
-        "Title":  "Audit policy coverage on domain controllers",
-        "Description":  "Ensure auditing for account logon, management, policy change, privilege use, and system events.",
-        "Remediation":  "Configure advanced audit policies via GPO; forward events to SIEM."
-    },
-    {
-        "Timestamp":  "2026-01-07T11:09:29.7600638+01:00",
-        "Category":  "Monitoring",
-        "Id":  "SECLOG",
-        "Severity":  "Medium",
-        "Title":  "Security log size and retention on domain controllers",
-        "Description":  "Adequate log size and retention prevent loss of critical security telemetry.",
-        "Remediation":  "Increase Security log size (â‰¥2048 MB) and configure retention; forward to SIEM."
-    }
+[
+  {
+    "Timestamp": "2026-01-08T10:01:18.5214182+01:00",
+    "Category": "Security",
+    "Id": "PRIV-Domain Admins",
+    "Severity": "High",
+    "Title": "Privileged group membership: Domain Admins",
+    "Description": "List members of privileged group.",
+    "Remediation": "Review and remove unnecessary members. Enforce tiered admin model and JIT/PIM for elevation."
+  },
+  {
+    "Timestamp": "2026-01-08T10:01:18.5706711+01:00",
+    "Category": "Security",
+    "Id": "PRIV-Enterprise Admins",
+    "Severity": "Info",
+    "Title": "Privileged group membership: Enterprise Admins",
+    "Description": "List members of privileged group.",
+    "Remediation": "Review and remove unnecessary members. Enforce tiered admin model and JIT/PIM for elevation."
+  },
+  {
+    "Timestamp": "2026-01-08T10:01:18.6204309+01:00",
+    "Category": "Security",
+    "Id": "PRIV-Schema Admins",
+    "Severity": "Info",
+    "Title": "Privileged group membership: Schema Admins",
+    "Description": "List members of privileged group.",
+    "Remediation": "Review and remove unnecessary members. Enforce tiered admin model and JIT/PIM for elevation."
+  },
+  {
+    "Timestamp": "2026-01-08T10:01:18.6565498+01:00",
+    "Category": "Security",
+    "Id": "PRIV-Administrators",
+    "Severity": "High",
+    "Title": "Privileged group membership: Administrators",
+    "Description": "List members of privileged group.",
+    "Remediation": "Review and remove unnecessary members. Enforce tiered admin model and JIT/PIM for elevation."
+  },
+  {
+    "Timestamp": "2026-01-08T10:01:18.6815927+01:00",
+    "Category": "Security",
+    "Id": "PRIV-Backup Operators",
+    "Severity": "Info",
+    "Title": "Privileged group membership: Backup Operators",
+    "Description": "List members of privileged group.",
+    "Remediation": "Review and remove unnecessary members. Enforce tiered admin model and JIT/PIM for elevation."
+  },
+  {
+    "Timestamp": "2026-01-08T10:01:18.7047662+01:00",
+    "Category": "Security",
+    "Id": "PRIV-Account Operators",
+    "Severity": "Info",
+    "Title": "Privileged group membership: Account Operators",
+    "Description": "List members of privileged group.",
+    "Remediation": "Review and remove unnecessary members. Enforce tiered admin model and JIT/PIM for elevation."
+  },
+  {
+    "Timestamp": "2026-01-08T10:01:18.7311853+01:00",
+    "Category": "Security",
+    "Id": "PRIV-Server Operators",
+    "Severity": "Info",
+    "Title": "Privileged group membership: Server Operators",
+    "Description": "List members of privileged group.",
+    "Remediation": "Review and remove unnecessary members. Enforce tiered admin model and JIT/PIM for elevation."
+  },
+  {
+    "Timestamp": "2026-01-08T10:01:18.7569115+01:00",
+    "Category": "Security",
+    "Id": "PRIV-Print Operators",
+    "Severity": "Info",
+    "Title": "Privileged group membership: Print Operators",
+    "Description": "List members of privileged group.",
+    "Remediation": "Review and remove unnecessary members. Enforce tiered admin model and JIT/PIM for elevation."
+  },
+  {
+    "Timestamp": "2026-01-08T10:01:18.7610180+01:00",
+    "Category": "Hygiene",
+    "Id": "STALE-ACCOUNTS",
+    "Severity": "Medium",
+    "Title": "Stale enabled user accounts (>90 days)",
+    "Description": "Enabled accounts with no recent logon increase attack surface.",
+    "Remediation": "Disable or remove stale accounts. Implement lifecycle automation and time-bound access."
+  },
+  {
+    "Timestamp": "2026-01-08T10:01:18.8050219+01:00",
+    "Category": "Policy",
+    "Id": "PWD-POLICY",
+    "Severity": "Medium",
+    "Title": "Password policy audit (domain + FGPP)",
+    "Description": "Reviews domain and fine-grained password policies for strength and reversible encryption.",
+    "Remediation": "Set MinLength >= 14+ or prefer passphrases. Enable complexity. Disable reversible encryption. Consider AAD/SSO and MFA."
+  },
+  {
+    "Timestamp": "2026-01-08T10:01:18.8091346+01:00",
+    "Category": "Security",
+    "Id": "PWD-NEVER-EXPIRES",
+    "Severity": "Info",
+    "Title": "Enabled accounts with password set to never expire",
+    "Description": "Service or privileged accounts with non-expiring passwords increase risk.",
+    "Remediation": "Migrate to gMSA or vault-managed secrets; enforce rotation via policy or automation."
+  },
+  {
+    "Timestamp": "2026-01-08T10:01:18.8114959+01:00",
+    "Category": "Policy",
+    "Id": "REV-ENC",
+    "Severity": "Info",
+    "Title": "Reversible password encryption enabled in FGPP",
+    "Description": "Storing passwords with reversible encryption significantly weakens security.",
+    "Remediation": "Disable reversible encryption in all password policies. Validate via Group Policy 'Accounts: Store passwords using reversible encryption'."
+  },
+  {
+    "Timestamp": "2026-01-08T10:01:18.8182971+01:00",
+    "Category": "Security",
+    "Id": "KERB-DELEG",
+    "Severity": "Medium",
+    "Title": "Kerberos delegation audit (unconstrained & constrained)",
+    "Description": "Unconstrained delegation is high risk; constrained delegation must be tightly scoped.",
+    "Remediation": "Remove unconstrained delegation. Restrict constrained delegation only to required services; prefer protocol transition off."
+  },
+  {
+    "Timestamp": "2026-01-08T10:01:18.8210204+01:00",
+    "Category": "Security",
+    "Id": "ADMINSD",
+    "Severity": "Medium",
+    "Title": "AdminSDHolder protected accounts (adminCount=1)",
+    "Description": "Protected accounts do not inherit permissions; verify necessity to reduce persistence risks.",
+    "Remediation": "Remove privileged group membership if not needed; run SDProp reset and re-enable inheritance where appropriate."
+  },
+  {
+    "Timestamp": "2026-01-08T10:01:18.8299858+01:00",
+    "Category": "Security",
+    "Id": "ACL-Domain Admins",
+    "Severity": "High",
+    "Title": "Risky ACEs on sensitive object: Domain Admins",
+    "Description": "High-privilege ACEs (GenericAll/WriteOwner/WriteDacl) may enable escalation.",
+    "Remediation": "Restrict ACEs to admins; remove broad rights; implement tiering and just-in-time access."
+  },
+  {
+    "Timestamp": "2026-01-08T10:01:18.8383222+01:00",
+    "Category": "Security",
+    "Id": "ACL-Enterprise Admins",
+    "Severity": "High",
+    "Title": "Risky ACEs on sensitive object: Enterprise Admins",
+    "Description": "High-privilege ACEs (GenericAll/WriteOwner/WriteDacl) may enable escalation.",
+    "Remediation": "Restrict ACEs to admins; remove broad rights; implement tiering and just-in-time access."
+  },
+  {
+    "Timestamp": "2026-01-08T10:01:18.8458384+01:00",
+    "Category": "Security",
+    "Id": "ACL-Schema Admins",
+    "Severity": "High",
+    "Title": "Risky ACEs on sensitive object: Schema Admins",
+    "Description": "High-privilege ACEs (GenericAll/WriteOwner/WriteDacl) may enable escalation.",
+    "Remediation": "Restrict ACEs to admins; remove broad rights; implement tiering and just-in-time access."
+  },
+  {
+    "Timestamp": "2026-01-08T10:01:18.8528716+01:00",
+    "Category": "Security",
+    "Id": "ACL-Administrators",
+    "Severity": "High",
+    "Title": "Risky ACEs on sensitive object: Administrators",
+    "Description": "High-privilege ACEs (GenericAll/WriteOwner/WriteDacl) may enable escalation.",
+    "Remediation": "Restrict ACEs to admins; remove broad rights; implement tiering and just-in-time access."
+  },
+  {
+    "Timestamp": "2026-01-08T10:01:18.8635847+01:00",
+    "Category": "Security",
+    "Id": "ACL-Backup Operators",
+    "Severity": "High",
+    "Title": "Risky ACEs on sensitive object: Backup Operators",
+    "Description": "High-privilege ACEs (GenericAll/WriteOwner/WriteDacl) may enable escalation.",
+    "Remediation": "Restrict ACEs to admins; remove broad rights; implement tiering and just-in-time access."
+  },
+  {
+    "Timestamp": "2026-01-08T10:01:18.8711246+01:00",
+    "Category": "Security",
+    "Id": "ACL-Account Operators",
+    "Severity": "High",
+    "Title": "Risky ACEs on sensitive object: Account Operators",
+    "Description": "High-privilege ACEs (GenericAll/WriteOwner/WriteDacl) may enable escalation.",
+    "Remediation": "Restrict ACEs to admins; remove broad rights; implement tiering and just-in-time access."
+  },
+  {
+    "Timestamp": "2026-01-08T10:01:18.8803329+01:00",
+    "Category": "Security",
+    "Id": "ACL-Server Operators",
+    "Severity": "High",
+    "Title": "Risky ACEs on sensitive object: Server Operators",
+    "Description": "High-privilege ACEs (GenericAll/WriteOwner/WriteDacl) may enable escalation.",
+    "Remediation": "Restrict ACEs to admins; remove broad rights; implement tiering and just-in-time access."
+  },
+  {
+    "Timestamp": "2026-01-08T10:01:18.8878287+01:00",
+    "Category": "Security",
+    "Id": "ACL-Print Operators",
+    "Severity": "High",
+    "Title": "Risky ACEs on sensitive object: Print Operators",
+    "Description": "High-privilege ACEs (GenericAll/WriteOwner/WriteDacl) may enable escalation.",
+    "Remediation": "Restrict ACEs to admins; remove broad rights; implement tiering and just-in-time access."
+  },
+  {
+    "Timestamp": "2026-01-08T10:01:18.9312720+01:00",
+    "Category": "Health",
+    "Id": "REPL",
+    "Severity": "Info",
+    "Title": "Domain controller replication status",
+    "Description": "Replication failures and high latency impact consistency and security enforcement.",
+    "Remediation": "Investigate failing links with repadmin and event logs; fix DNS, connectivity, and AD sites."
+  },
+  {
+    "Timestamp": "2026-01-08T10:01:53.7339558+01:00",
+    "Category": "Health",
+    "Id": "DNS",
+    "Severity": "High",
+    "Title": "DNS health via dcdiag",
+    "Description": "AD-integrated DNS issues cause authentication and replication failures.",
+    "Remediation": "Resolve zone errors, stale records, and delegation issues; ensure DCs register SRV records."
+  },
+  {
+    "Timestamp": "2026-01-08T10:01:53.9417434+01:00",
+    "Category": "Health",
+    "Id": "SYSVOL",
+    "Severity": "Medium",
+    "Title": "SYSVOL replication service status (DFSR vs FRS)",
+    "Description": "FRS is deprecated; DFSR is required. Confirm replication health and migration status.",
+    "Remediation": "Migrate SYSVOL from FRS to DFSR; validate DFSR connections and backlog with dfsrdiag."
+  },
+  {
+    "Timestamp": "2026-01-08T10:01:54.0497793+01:00",
+    "Category": "Health",
+    "Id": "FSMO",
+    "Severity": "Info",
+    "Title": "FSMO role holders",
+    "Description": "Record current role holders to confirm availability and placement.",
+    "Remediation": "Ensure role holders are online, backed up, and placed appropriately per sites and capacity."
+  },
+  {
+    "Timestamp": "2026-01-08T10:01:55.0594770+01:00",
+    "Category": "Health",
+    "Id": "DC-SVC",
+    "Severity": "High",
+    "Title": "Domain controller critical service status",
+    "Description": "Critical DC services must be running for authentication and replication.",
+    "Remediation": "Start services or troubleshoot failures; check event logs and configuration."
+  },
+  {
+    "Timestamp": "2026-01-08T10:01:56.0477294+01:00",
+    "Category": "Capacity",
+    "Id": "NTDS",
+    "Severity": "Info",
+    "Title": "AD database (ntds.dit) size per DC",
+    "Description": "Track AD DB size for capacity planning; monitor sudden growth.",
+    "Remediation": "Ensure sufficient disk space and regular backups; defragment offline if required by Microsoft guidance."
+  },
+  {
+    "Timestamp": "2026-01-08T10:01:56.0503958+01:00",
+    "Category": "Exposure",
+    "Id": "TRUSTS",
+    "Severity": "Info",
+    "Title": "Domain and forest trust relationships",
+    "Description": "Review external and forest trusts; validate SID filtering and selective authentication.",
+    "Remediation": "Remove obsolete trusts; enable SID filtering; use selective authentication for external trusts."
+  },
+  {
+    "Timestamp": "2026-01-08T10:01:56.3085740+01:00",
+    "Category": "Configuration",
+    "Id": "GPO",
+    "Severity": "Medium",
+    "Title": "GPO review (orphaned and security filtering)",
+    "Description": "Identify orphaned GPOs and review security filtering for over-permission.",
+    "Remediation": "Delete or archive unused GPOs; tighten GPO permissions and links; document GPO ownership."
+  },
+  {
+    "Timestamp": "2026-01-08T10:01:56.3548723+01:00",
+    "Category": "Security",
+    "Id": "PREWIN2000",
+    "Severity": "Info",
+    "Title": "Pre-Windows 2000 Compatible Access membership",
+    "Description": "Membership here broadens read access; review for legacy needs only.",
+    "Remediation": "Remove unnecessary principals; ensure legacy apps are updated."
+  },
+  {
+    "Timestamp": "2026-01-08T10:01:56.3611233+01:00",
+    "Category": "Security",
+    "Id": "SPN",
+    "Severity": "Info",
+    "Title": "SPN audit (duplicate SPNs & ownership)",
+    "Description": "Duplicate SPNs cause auth conflicts; SPNs on user accounts increase Kerberoasting risk.",
+    "Remediation": "Remove duplicates; prefer computer accounts for service SPNs; monitor for high-value service tickets."
+  },
+  {
+    "Timestamp": "2026-01-08T10:01:56.5506380+01:00",
+    "Category": "Monitoring",
+    "Id": "AUDITPOL",
+    "Severity": "Info",
+    "Title": "Audit policy coverage on domain controllers",
+    "Description": "Ensure auditing for account logon, management, policy change, privilege use, and system events.",
+    "Remediation": "Configure advanced audit policies via GPO; forward events to SIEM."
+  },
+  {
+    "Timestamp": "2026-01-08T10:01:56.7858683+01:00",
+    "Category": "Monitoring",
+    "Id": "SECLOG",
+    "Severity": "Medium",
+    "Title": "Security log size and retention on domain controllers",
+    "Description": "Adequate log size and retention prevent loss of critical security telemetry.",
+    "Remediation": "Increase Security log size (≥2048 MB) and configure retention; forward to SIEM."
+  }
 ]
