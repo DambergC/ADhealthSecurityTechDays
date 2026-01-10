@@ -109,7 +109,7 @@ try {
     $dcs = Get-ADDomainController -Filter * -ErrorAction Stop
     
     Write-Host "Domain: $($domain.DNSRoot)" -ForegroundColor Green
-    Write-Host "Forest: $($forest. RootDomain)" -ForegroundColor Green
+    Write-Host "Forest: $($forest.RootDomain)" -ForegroundColor Green
     Write-Host "DCs Found: $($dcs.Count)" -ForegroundColor Green
     Write-Host ""
 } catch {
@@ -212,11 +212,11 @@ Write-Host ""
 
 #region Generate Summary Statistics
 
-$totalFindings = $allFindings. Count
+$totalFindings = $allFindings.Count
 $criticalCount = ($allFindings | Where-Object { $_.Severity -eq 'Critical' }).Count
 $highCount = ($allFindings | Where-Object { $_.Severity -eq 'High' }).Count
-$mediumCount = ($allFindings | Where-Object { $_. Severity -eq 'Medium' }).Count
-$lowCount = ($allFindings | Where-Object { $_. Severity -eq 'Low' }).Count
+$mediumCount = ($allFindings | Where-Object { $_.Severity -eq 'Medium' }).Count
+$lowCount = ($allFindings | Where-Object { $_.Severity -eq 'Low' }).Count
 $infoCount = ($allFindings | Where-Object { $_.Severity -eq 'Info' }).Count
 
 Write-Host "================================================================" -ForegroundColor Cyan
@@ -225,10 +225,10 @@ Write-Host "================================================================" -F
 Write-Host "Total Findings:     $totalFindings"
 Write-Host "Critical:           " -NoNewline
 Write-Host $criticalCount -ForegroundColor Red -NoNewline
-Write-Host "   [!!! ]" -ForegroundColor Red
+Write-Host "   [!!!]" -ForegroundColor Red
 Write-Host "High:              " -NoNewline
 Write-Host $highCount -ForegroundColor Magenta -NoNewline
-Write-Host "  [!! ]" -ForegroundColor Magenta
+Write-Host "  [!!]" -ForegroundColor Magenta
 Write-Host "Medium:            " -NoNewline
 Write-Host $mediumCount -ForegroundColor Yellow -NoNewline
 Write-Host "  [!]" -ForegroundColor Yellow
@@ -313,7 +313,7 @@ $htmlBody = @"
             color: #333;
             margin-top: 30px;
             border-bottom: 2px solid #ddd;
-            padding-bottom:  5px;
+            padding-bottom: 5px;
         }
         .summary {
             background-color: white;
@@ -328,7 +328,7 @@ $htmlBody = @"
             gap: 15px;
             margin-top: 15px;
         }
-        . summary-item {
+        .summary-item {
             padding: 15px;
             border-radius: 5px;
             text-align: center;
@@ -340,7 +340,7 @@ $htmlBody = @"
         }
         .summary-item p {
             margin: 5px 0 0 0;
-            font-size:  14px;
+            font-size: 14px;
             opacity: 0.8;
         }
         .critical-box { background-color: #d32f2f; color: white; }
@@ -372,7 +372,7 @@ $htmlBody = @"
         .High { background-color: #fff3e0; border-left: 4px solid #f57c00; }
         .Medium { background-color: #fffde7; border-left: 4px solid #fbc02d; }
         .Low { background-color: #f1f8e9; border-left: 4px solid #afb42b; }
-        .Info { background-color: #e3f2fd; border-left:  4px solid #0288d1; }
+        .Info { background-color: #e3f2fd; border-left: 4px solid #0288d1; }
         .severity-badge {
             padding: 4px 8px;
             border-radius: 3px;
@@ -383,7 +383,7 @@ $htmlBody = @"
         .severity-Critical { background-color: #d32f2f; color: white; }
         .severity-High { background-color: #f57c00; color: white; }
         .severity-Medium { background-color: #fbc02d; color: black; }
-        . severity-Low { background-color:  #afb42b; color:  white; }
+        .severity-Low { background-color: #afb42b; color: white; }
         .severity-Info { background-color: #0288d1; color: white; }
         .meta {
             color: #666;
@@ -392,8 +392,8 @@ $htmlBody = @"
             padding-top: 20px;
             border-top: 1px solid #ddd;
         }
-        . filter-buttons {
-            margin:  15px 0;
+        .filter-buttons {
+            margin: 15px 0;
         }
         .filter-btn {
             padding: 8px 15px;
@@ -415,7 +415,7 @@ $htmlBody = @"
             var rows = document.querySelectorAll('#findingsTable tbody tr');
             rows.forEach(function(row) {
                 if (severity === 'all' || row.classList.contains(severity)) {
-                    row. style.display = '';
+                    row.style.display = '';
                 } else {
                     row.style.display = 'none';
                 }
@@ -494,7 +494,7 @@ foreach ($finding in ($allFindings | Sort-Object @{Expression={
                 <td>$($finding.Id)</td>
                 <td><strong>$($finding.Title)</strong></td>
                 <td>$([System.Web.HttpUtility]::HtmlEncode($finding.Description))</td>
-                <td>$([System.Web.HttpUtility]::HtmlEncode($finding. Remediation))</td>
+                <td>$([System.Web.HttpUtility]::HtmlEncode($finding.Remediation))</td>
             </tr>
 "@
 }
@@ -531,9 +531,9 @@ ACTIVE DIRECTORY SECURITY HEALTH - EXECUTIVE SUMMARY
 ================================================================
 
 Domain:          $($domain.DNSRoot)
-Forest:         $($forest. RootDomain)
-Scan Date:      $($startTime. ToString('yyyy-MM-dd HH:mm:ss'))
-Scan Duration:  $([math]::Round($duration.TotalMinutes,2)) minutes
+Forest:          $($forest.RootDomain)
+Scan Date:       $($startTime.ToString('yyyy-MM-dd HH:mm:ss'))
+Scan Duration:   $([math]::Round($duration.TotalMinutes,2)) minutes
 Domain Controllers: $($dcs.Count)
 
 ================================================================
@@ -544,9 +544,9 @@ Total Findings:  $totalFindings
 
 Critical:        $criticalCount
 High:            $highCount
-Medium:         $mediumCount
-Low:            $lowCount
-Info:           $infoCount
+Medium:          $mediumCount
+Low:             $lowCount
+Info:            $infoCount
 
 ================================================================
 RISK ASSESSMENT
@@ -574,7 +574,7 @@ TOP 10 FINDINGS (by Severity)
 
 $($allFindings | Where-Object { $_.Severity -in @('Critical','High','Medium') } | 
     Sort-Object @{Expression={
-        switch($_. Severity) {
+        switch($_.Severity) {
             'Critical' {1}
             'High' {2}
             'Medium' {3}
@@ -582,7 +582,7 @@ $($allFindings | Where-Object { $_.Severity -in @('Critical','High','Medium') } 
     }} | 
     Select-Object -First 10 | 
     ForEach-Object { 
-        "[$($_.Severity. ToUpper())] $($_.Id): $($_.Title)`n  Remediation: $($_.Remediation)`n" 
+        "[$($_.Severity.ToUpper())] $($_.Id): $($_.Title)`n  Remediation: $($_.Remediation)`n" 
     } | Out-String)
 
 ================================================================
@@ -592,7 +592,7 @@ CATEGORY BREAKDOWN
 $($allFindings | Group-Object Category | 
     Sort-Object Count -Descending | 
     ForEach-Object { 
-        "$($_.Name. PadRight(25)) :  $($_.Count)" 
+        "$($_.Name.PadRight(25)) : $($_.Count)" 
     } | Out-String)
 
 ================================================================
@@ -610,10 +610,10 @@ RECOMMENDATIONS
 REPORTS GENERATED
 ================================================================
 
-HTML Dashboard:     $([System.IO.Path]::GetFileName($htmlPath))
-JSON Export:        $([System.IO.Path]::GetFileName($jsonPath))
-CSV Summary:        $([System.IO. Path]::GetFileName($csvPath))
-Executive Summary:  $([System.IO.Path]::GetFileName($execPath))
+HTML Dashboard:      $([System.IO.Path]::GetFileName($htmlPath))
+JSON Export:         $([System.IO.Path]::GetFileName($jsonPath))
+CSV Summary:         $([System.IO.Path]::GetFileName($csvPath))
+Executive Summary:   $([System.IO.Path]::GetFileName($execPath))
 
 ================================================================
 "@
@@ -638,7 +638,7 @@ if ($EmailReport -and $EmailTo) {
 <h2>Active Directory Security Health Report</h2>
 <p><strong>Domain:</strong> $($domain.DNSRoot)</p>
 <p><strong>Scan Date:</strong> $($startTime.ToString('yyyy-MM-dd HH:mm:ss'))</p>
-<p><strong>Duration:</strong> $([math]:: Round($duration.TotalMinutes,2)) minutes</p>
+<p><strong>Duration:</strong> $([math]::Round($duration.TotalMinutes,2)) minutes</p>
 
 <h3>Summary</h3>
 <table border="1" cellpadding="5" cellspacing="0" style="border-collapse: collapse;">
@@ -650,7 +650,7 @@ if ($EmailReport -and $EmailTo) {
     <td>Critical</td>
     <td><strong>$criticalCount</strong></td>
 </tr>
-<tr style="background-color:  #fff3e0;">
+<tr style="background-color: #fff3e0;">
     <td>High</td>
     <td><strong>$highCount</strong></td>
 </tr>
