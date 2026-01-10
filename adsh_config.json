@@ -1,5 +1,6 @@
 {
   "StaleDays": 90,
+  "ComputerStaleDays": 90,
   "ReplicationMaxLatencyMinutes": 60,
   "EventLogMinSizeMB": 2048,
   "AlertEmail": "",
@@ -11,7 +12,8 @@
     "Backup Operators",
     "Account Operators",
     "Server Operators",
-    "Print Operators"
+    "Print Operators",
+    "DnsAdmins"
   ],
   "CriticalServices": [
     "NTDS",
@@ -22,5 +24,10 @@
     "DFSR"
   ],
   "DNSDcDiagTimeoutSeconds": 180,
-  "SysvolRequireDFSR": true
+  "SysvolRequireDFSR": true,
+  "KrbtgtMaxPasswordAgeDays": 180,
+  "PrivilegedAccountMaxPasswordAgeDays": 90,
+  "DCPatchMaxAgeDays": 60,
+  "TombstoneMinDays": 180,
+  "LAPSMinCoveragePercent": 90
 }
