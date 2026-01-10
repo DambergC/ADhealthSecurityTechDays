@@ -156,7 +156,7 @@ try {
     $allFindings += Get-SecurityEventLogConfig
     
     $baselineTime = ((Get-Date) - $baselineStart).TotalSeconds
-    Write-Host "20/20 complete ($([math]::Round($baselineTime,1))s)" -ForegroundColor Green
+    Write-Host "20/20 complete ($([math]::Round($baselineTime,1)))s" -ForegroundColor Green
 } catch {
     Write-Host "FAILED" -ForegroundColor Red
     Write-Warning "Baseline checks error: $_"
@@ -191,7 +191,7 @@ try {
     $allFindings += Get-ADRecycleBinStatus
     
     $advancedTime = ((Get-Date) - $advancedStart).TotalSeconds
-    Write-Host "20/20 complete ($([math]::Round($advancedTime,1))s)" -ForegroundColor Green
+    Write-Host "20/20 complete ($([math]::Round($advancedTime,1)))s" -ForegroundColor Green
 } catch {
     Write-Host "FAILED" -ForegroundColor Red
     Write-Warning "Advanced checks error: $_"
