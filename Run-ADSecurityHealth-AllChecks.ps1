@@ -313,20 +313,21 @@ Write-Host "CSV:     $csvPath" -ForegroundColor Green
 $htmlPath = Join-Path $OutputPath "$reportBaseName-report.html"
 Write-Host "Generating HTML dashboard..." -ForegroundColor Gray
 
-$htmlBody = @"
+# Base HTML (header + summary + table header)
+$htmlBody = @'
 <!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>AD Security Health Report - $($domain.DNSRoot)</title>
+    <title>AD Security Health Report - __DOMAIN__</title>
     <style>
         body { 
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif; 
             margin: 20px; 
             background-color: #f5f5f5;
         }
         h1 { 
-            color:  #0078D4; 
+            color: #0078D4; 
             border-bottom: 3px solid #0078D4;
             padding-bottom: 10px;
         }
@@ -334,13 +335,13 @@ $htmlBody = @"
             color: #333;
             margin-top: 30px;
             border-bottom: 2px solid #ddd;
-            padding-bottom:  5px;
+            padding-bottom: 5px;
         }
-        . summary {
+        .summary {
             background-color: white;
             padding: 20px;
             border-radius: 5px;
-            box-shadow:  0 2px 4px rgba(0,0,0,0.1);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
             margin-bottom: 20px;
         }
         .summary-grid {
@@ -349,7 +350,7 @@ $htmlBody = @"
             gap: 15px;
             margin-top: 15px;
         }
-        . summary-item {
+        .summary-item {
             padding: 15px;
             border-radius: 5px;
             text-align: center;
@@ -365,10 +366,10 @@ $htmlBody = @"
             opacity: 0.8;
         }
         .critical-box { background-color: #d32f2f; color: white; }
-        .high-box { background-color: #f57c00; color: white; }
-        .medium-box { background-color: #fbc02d; color: black; }
-        .low-box { background-color: #afb42b; color: white; }
-        .info-box { background-color: #0288d1; color: white; }
+        .high-box     { background-color: #f57c00; color: white; }
+        .medium-box   { background-color: #fbc02d; color: black; }
+        .low-box      { background-color: #afb42b; color: white; }
+        .info-box     { background-color: #0288d1; color: white; }
         table { 
             border-collapse: collapse; 
             width: 100%; 
@@ -389,11 +390,11 @@ $htmlBody = @"
             border-bottom: 1px solid #ddd; 
         }
         tr:hover { background-color: #f5f5f5; }
-        . Critical { background-color: #ffebee; border-left: 4px solid #d32f2f; }
-        .High { background-color: #fff3e0; border-left: 4px solid #f57c00; }
-        .Medium { background-color: #fffde7; border-left: 4px solid #fbc02d; }
-        .Low { background-color: #f1f8e9; border-left: 4px solid #afb42b; }
-        .Info { background-color: #e3f2fd; border-left:  4px solid #0288d1; }
+        .Critical { background-color: #ffebee; border-left: 4px solid #d32f2f; }
+        .High     { background-color: #fff3e0; border-left: 4px solid #f57c00; }
+        .Medium   { background-color: #fffde7; border-left: 4px solid #fbc02d; }
+        .Low      { background-color: #f1f8e9; border-left: 4px solid #afb42b; }
+        .Info     { background-color: #e3f2fd; border-left: 4px solid #0288d1; }
         .severity-badge {
             padding: 4px 8px;
             border-radius: 3px;
@@ -402,10 +403,10 @@ $htmlBody = @"
             text-transform: uppercase;
         }
         .severity-Critical { background-color: #d32f2f; color: white; }
-        .severity-High { background-color: #f57c00; color: white; }
-        .severity-Medium { background-color: #fbc02d; color: black; }
-        . severity-Low { background-color:  #afb42b; color:  white; }
-        .severity-Info { background-color: #0288d1; color: white; }
+        .severity-High     { background-color: #f57c00; color: white; }
+        .severity-Medium   { background-color: #fbc02d; color: black; }
+        .severity-Low      { background-color: #afb42b; color: white; }
+        .severity-Info     { background-color: #0288d1; color: white; }
         .meta {
             color: #666;
             font-size: 12px;
@@ -413,8 +414,8 @@ $htmlBody = @"
             padding-top: 20px;
             border-top: 1px solid #ddd;
         }
-        . filter-buttons {
-            margin:  15px 0;
+        .filter-buttons {
+            margin: 15px 0;
         }
         .filter-btn {
             padding: 8px 15px;
@@ -429,20 +430,21 @@ $htmlBody = @"
             opacity: 0.8; 
         }
         .filter-btn-all {
-            background-color: #0078D4; color: white;
+            background-color: #0078D4; 
+            color: white;
         }
         .filter-btn-critical { background-color: #d32f2f; color: white; }
-        .filter-btn-high { background-color: #f57c00; color: white; }
-        .filter-btn-medium { background-color: #fbc02d; color: black; }
+        .filter-btn-high     { background-color: #f57c00; color: white; }
+        .filter-btn-medium   { background-color: #fbc02d; color: black; }
     </style>
     <script>
         function filterTable(severity) {
-            var rows = document.querySelectorAll('#findingsTable tbody tr');
+            var rows = document.querySelectorAll("#findingsTable tbody tr");
             rows.forEach(function(row) {
-                if (severity === 'all' || row. classList.contains(severity)) {
-                    row.style.display = '';
+                if (severity === "all" || row.classList.contains(severity)) {
+                    row.style.display = "";
                 } else {
-                    row.style.display = 'none';
+                    row.style.display = "none";
                 }
             });
         }
@@ -451,31 +453,31 @@ $htmlBody = @"
 <body>
     <h1>Active Directory Security & Health Report</h1>
     <div class="summary">
-        <p><strong>Domain:</strong> $($domain.DNSRoot)</p>
-        <p><strong>Forest:</strong> $($forest.RootDomain)</p>
-        <p><strong>Scan Date:</strong> $($startTime.ToString('yyyy-MM-dd HH: mm:ss'))</p>
-        <p><strong>Domain Controllers:</strong> $($dcs.Count)</p>
-        <p><strong>Total Findings:</strong> $totalFindings</p>
+        <p><strong>Domain:</strong> __DOMAIN__</p>
+        <p><strong>Forest:</strong> __FOREST__</p>
+        <p><strong>Scan Date:</strong> __SCANDATE__</p>
+        <p><strong>Domain Controllers:</strong> __DCCOUNT__</p>
+        <p><strong>Total Findings:</strong> __TOTALFINDINGS__</p>
         
         <div class="summary-grid">
             <div class="summary-item critical-box">
-                <h3>$criticalCount</h3>
+                <h3>__CRITCOUNT__</h3>
                 <p>Critical</p>
             </div>
             <div class="summary-item high-box">
-                <h3>$highCount</h3>
+                <h3>__HIGHCOUNT__</h3>
                 <p>High</p>
             </div>
             <div class="summary-item medium-box">
-                <h3>$mediumCount</h3>
+                <h3>__MEDCOUNT__</h3>
                 <p>Medium</p>
             </div>
             <div class="summary-item low-box">
-                <h3>$lowCount</h3>
+                <h3>__LOWCOUNT__</h3>
                 <p>Low</p>
             </div>
             <div class="summary-item info-box">
-                <h3>$infoCount</h3>
+                <h3>__INFOCOUNT__</h3>
                 <p>Info</p>
             </div>
         </div>
@@ -483,10 +485,10 @@ $htmlBody = @"
     
     <h2>Findings</h2>
     <div class="filter-buttons">
-        <button class="filter-btn filter-btn-all" onclick="filterTable('all')">All</button>
+        <button class="filter-btn filter-btn-all"      onclick="filterTable('all')">All</button>
         <button class="filter-btn filter-btn-critical" onclick="filterTable('Critical')">Critical</button>
-        <button class="filter-btn filter-btn-high" onclick="filterTable('High')">High</button>
-        <button class="filter-btn filter-btn-medium" onclick="filterTable('Medium')">Medium</button>
+        <button class="filter-btn filter-btn-high"     onclick="filterTable('High')">High</button>
+        <button class="filter-btn filter-btn-medium"   onclick="filterTable('Medium')">Medium</button>
     </div>
     
     <table id="findingsTable">
@@ -501,6 +503,138 @@ $htmlBody = @"
             </tr>
         </thead>
         <tbody>
+'@
+
+# Inject dynamic values into the HTML shell
+$htmlBody = $htmlBody.Replace('__DOMAIN__',        $domain.DNSRoot)
+$htmlBody = $htmlBody.Replace('__FOREST__',        $forest.RootDomain)
+$htmlBody = $htmlBody.Replace('__SCANDATE__',      $startTime.ToString('yyyy-MM-dd HH:mm:ss'))
+$htmlBody = $htmlBody.Replace('__DCCOUNT__',       $dcs.Count)
+$htmlBody = $htmlBody.Replace('__TOTALFINDINGS__', $totalFindings)
+$htmlBody = $htmlBody.Replace('__CRITCOUNT__',     $criticalCount)
+$htmlBody = $htmlBody.Replace('__HIGHCOUNT__',     $highCount)
+$htmlBody = $htmlBody.Replace('__MEDCOUNT__',      $mediumCount)
+$htmlBody = $htmlBody.Replace('__LOWCOUNT__',      $lowCount)
+$htmlBody = $htmlBody.Replace('__INFOCOUNT__',     $infoCount)
+
+# Add System.Web for HtmlEncode
+Add-Type -AssemblyName System.Web
+
+foreach ($finding in ($allFindings | Sort-Object @{Expression={
+    switch ($_.Severity) {
+        'Critical' { 1 }
+        'High'     { 2 }
+        'Medium'   { 3 }
+        'Low'      { 4 }
+        'Info'     { 5 }
+        default    { 6 }
+    }
+}}, Category)) {
+
+    $desc = [System.Web.HttpUtility]::HtmlEncode($finding.Description)
+    $rem  = [System.Web.HttpUtility]::HtmlEncode($finding.Remediation)
+
+    $row = @'
+            <tr class="__SEVERITY__">
+                <td><span class="severity-badge severity-__SEVERITY__">__SEVERITY__</span></td>
+                <td>__CATEGORY__</td>
+                <td>__ID__</td>
+                <td><strong>__TITLE__</strong></td>
+                <td>__DESC__</td>
+                <td>__REM__</td>
+            </tr>
+'@
+
+    $row = $row.Replace('__SEVERITY__', $finding.Severity)
+    $row = $row.Replace('__CATEGORY__', $finding.Category)
+    $row = $row.Replace('__ID__',       $finding.Id)
+    $row = $row.Replace('__TITLE__',    $finding.Title)
+    $row = $row.Replace('__DESC__',     $desc)
+    $row = $row.Replace('__REM__',      $rem)
+
+    $htmlBody += $row
+}
+
+$endTime  = Get-Date
+$duration = $endTime - $startTime
+
+# Close the HTML
+$htmlBody += @'
+        </tbody>
+    </table>
+    
+    <div class="meta">
+        <p><strong>Report Generated:</strong> __REPORTDATE__</p>
+        <p><strong>Scan Duration:</strong> __DURATION__ minutes</p>
+        <p><strong>Tool:</strong> ADSecurityHealth Complete Edition v2.1</p>
+    </div>
+</body>
+</html>
+'@
+
+$htmlBody = $htmlBody.Replace('__REPORTDATE__', $endTime.ToString('yyyy-MM-dd HH:mm:ss'))
+$htmlBody = $htmlBody.Replace('__DURATION__',   [math]::Round($duration.TotalMinutes,2))
+
+$htmlBody | Out-File -Encoding UTF8 $htmlPath
+Write-Host "HTML:      $htmlPath" -ForegroundColor Green
+
+$endTime = Get-Date
+$duration = $endTime - $startTime
+
+$htmlBody += @"
+        </tbody>
+    </table>
+    
+    <div class="meta">
+        <p><strong>Report Generated:</strong> $($endTime.ToString('yyyy-MM-dd HH:mm:ss'))</p>
+        <p><strong>Scan Duration:</strong> $([math]::Round($duration.TotalMinutes,2)) minutes</p>
+        <p><strong>Tool:</strong> ADSecurityHealth Complete Edition v2.1</p>
+    </div>
+</body>
+</html>
+"@
+
+# Add System.Web for HtmlEncode
+Add-Type -AssemblyName System.Web
+
+$htmlBody | Out-File -Encoding UTF8 $htmlPath
+Write-Host "HTML:       $htmlPath" -ForegroundColor Green
+
+foreach ($finding in ($allFindings | Sort-Object @{Expression={
+    switch($_. Severity) {
+        'Critical' {1}
+        'High' {2}
+        'Medium' {3}
+        'Low' {4}
+        'Info' {5}
+    }
+}}, Category)) {
+    $htmlBody += @"
+            <tr class="$($finding. Severity)">
+                <td><span class="severity-badge severity-$($finding.Severity)">$($finding.Severity)</span></td>
+                <td>$($finding.Category)</td>
+                <td>$($finding.Id)</td>
+                <td><strong>$($finding.Title)</strong></td>
+                <td>$([System.Web.HttpUtility]::HtmlEncode($finding.Description))</td>
+                <td>$([System.Web.HttpUtility]::HtmlEncode($finding.Remediation))</td>
+            </tr>
+"@
+}
+
+$endTime = Get-Date
+$duration = $endTime - $startTime
+
+$htmlBody += @"
+        </tbody>
+    </table>
+    
+    <div class="meta">
+        <p><strong>Report Generated:</strong> $($endTime.ToString('yyyy-MM-dd HH:mm:ss'))</p>
+        <p><strong>Scan Duration:</strong> $([math]::Round($duration.TotalMinutes,2)) minutes</p>
+        <p><strong>Tool:</strong> ADSecurityHealth Complete Edition v2.1</p>
+    </div>
+</body>
+</html>
 "@
 
 foreach ($finding in ($allFindings | Sort-Object @{Expression={
@@ -546,7 +680,6 @@ Add-Type -AssemblyName System.Web
 $htmlBody | Out-File -Encoding UTF8 $htmlPath
 Write-Host "HTML:      $htmlPath" -ForegroundColor Green
 
-# Executive Summary
 $execPath = Join-Path $OutputPath "$reportBaseName-executive-summary.txt"
 Write-Host "Generating executive summary..." -ForegroundColor Gray
 
@@ -556,42 +689,42 @@ ACTIVE DIRECTORY SECURITY HEALTH - EXECUTIVE SUMMARY
 ================================================================
 
 Domain:           $($domain.DNSRoot)
-Forest:          $($forest. RootDomain)
-Scan Date:       $($startTime. ToString('yyyy-MM-dd HH:mm:ss'))
-Scan Duration:   $([math]::Round($duration.TotalMinutes,2)) minutes
+Forest:           $($forest.RootDomain)
+Scan Date:        $($startTime.ToString('yyyy-MM-dd HH:mm:ss'))
+Scan Duration:    $([math]::Round($duration.TotalMinutes,2)) minutes
 Domain Controllers: $($dcs.Count)
 
 ================================================================
 FINDINGS OVERVIEW
 ================================================================
 
-Total Findings:  $totalFindings
+Total Findings:   $totalFindings
 
 Critical:         $criticalCount
 High:             $highCount
-Medium:          $mediumCount
-Low:             $lowCount
-Info:            $infoCount
+Medium:           $mediumCount
+Low:              $lowCount
+Info:             $infoCount
 
 ================================================================
 RISK ASSESSMENT
 ================================================================
 
 Overall Risk Level: $(
-    if ($criticalCount -gt 0) { "CRITICAL" }
-    elseif ($highCount -gt 10) { "HIGH" }
-    elseif ($highCount -gt 0) { "ELEVATED" }
-    elseif ($mediumCount -gt 20) { "MODERATE" }
-    else { "LOW" }
+    if     ($criticalCount -gt 0)       { "CRITICAL" }
+    elseif ($highCount     -gt 10)      { "HIGH" }
+    elseif ($highCount     -gt 0)       { "ELEVATED" }
+    elseif ($mediumCount   -gt 20)      { "MODERATE" }
+    else                                { "LOW" }
 )
 
-$(if ($criticalCount -gt 0) {@"
+$(if ($criticalCount -gt 0) { @"
 
-⚠️  IMMEDIATE ACTION REQUIRED
+IMMEDIATE ACTION REQUIRED
 Critical security vulnerabilities identified that require
 immediate remediation to prevent potential compromise.
 
-"@})
+"@ })
 
 ================================================================
 TOP 10 FINDINGS (by Severity)
@@ -599,15 +732,15 @@ TOP 10 FINDINGS (by Severity)
 
 $($allFindings | Where-Object { $_.Severity -in @('Critical','High','Medium') } | 
     Sort-Object @{Expression={
-        switch($_. Severity) {
-            'Critical' {1}
-            'High' {2}
-            'Medium' {3}
+        switch ($_.Severity) {
+            'Critical' { 1 }
+            'High'     { 2 }
+            'Medium'   { 3 }
         }
     }} | 
     Select-Object -First 10 | 
     ForEach-Object { 
-        "[$($_.Severity. ToUpper())] $($_.Id): $($_.Title)`n  Remediation: $($_.Remediation)`n" 
+        "[$($_.Severity.ToUpper())] $($_.Id): $($_.Title)`n  Remediation: $($_.Remediation)`n" 
     } | Out-String)
 
 ================================================================
@@ -617,7 +750,7 @@ CATEGORY BREAKDOWN
 $($allFindings | Group-Object Category | 
     Sort-Object Count -Descending | 
     ForEach-Object { 
-        "$($_.Name. PadRight(25)) : $($_.Count)" 
+        "$($_.Name.PadRight(25)) : $($_.Count)" 
     } | Out-String)
 
 ================================================================
@@ -635,7 +768,7 @@ RECOMMENDATIONS
 REPORTS GENERATED
 ================================================================
 
-HTML Dashboard:       $([System.IO.Path]::GetFileName($htmlPath))
+HTML Dashboard:      $([System.IO.Path]::GetFileName($htmlPath))
 JSON Export:         $([System.IO.Path]::GetFileName($jsonPath))
 CSV Summary:         $([System.IO.Path]::GetFileName($csvPath))
 Executive Summary:   $([System.IO.Path]::GetFileName($execPath))
@@ -644,8 +777,7 @@ Executive Summary:   $([System.IO.Path]::GetFileName($execPath))
 "@
 
 $execSummary | Out-File -Encoding UTF8 $execPath
-Write-Host "Executive:   $execPath" -ForegroundColor Green
-
+Write-Host "Executive: $execPath" -ForegroundColor Green
 Write-Host ""
 
 #endregion Export Reports
