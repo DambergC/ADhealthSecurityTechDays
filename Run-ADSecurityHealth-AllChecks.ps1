@@ -1,11 +1,11 @@
 #requires -Version 5.1
 <#
 .SYNOPSIS
-    Executes all 60+ Active Directory security and health checks. 
+    Executes all 60+ Active Directory security and health checks.  
 
 .DESCRIPTION
     Comprehensive runner that executes all baseline, advanced, and critical
-    AD security checks, then generates HTML, JSON, CSV, and executive summary reports.
+    AD security checks, then generates HTML, JSON, CSV, and executive summary reports. 
 
 .PARAMETER OutputPath
     Directory path for output reports. Defaults to .\reports
@@ -20,7 +20,7 @@
     Email recipient address for reports.
 
 .PARAMETER EmailFrom
-    Email sender address. 
+    Email sender address.  
 
 .PARAMETER SmtpServer
     SMTP server for email delivery.
@@ -42,7 +42,7 @@
 
 .NOTES
     Author: Active Directory Security Team
-    Version: 2.0.0
+    Version: 2.1.0
     Requires: Domain Admin or equivalent permissions
 #>
 
@@ -79,10 +79,10 @@ $startTime = Get-Date
 Write-Host "================================================================" -ForegroundColor Cyan
 Write-Host "AD SECURITY HEALTH CHECK - COMPLETE SCAN" -ForegroundColor Cyan
 Write-Host "================================================================" -ForegroundColor Cyan
-Write-Host "Scan Started: $($startTime.ToString('yyyy-MM-dd HH:mm:ss'))" -ForegroundColor Gray
+Write-Host "Scan Started: $($startTime.ToString('yyyy-MM-dd HH:mm: ss'))" -ForegroundColor Gray
 
 # Import module
-$modulePath = Join-Path $PSScriptRoot "ADSecurityHealth-Complete.psm1"
+$modulePath = Join-Path $PSScriptRoot "ADSecurityHealth-Complete. psm1"
 if (-not (Test-Path $modulePath)) {
     Write-Error "Module not found: $modulePath"
     exit 1
@@ -126,7 +126,7 @@ $allFindings = @()
 # Baseline Checks (1-20)
 Write-Host "[" -NoNewline
 Write-Host "✓" -ForegroundColor Green -NoNewline
-Write-Host "] Baseline Checks (1-20)........ .... " -NoNewline
+Write-Host "] Baseline Checks (1-20)........ ....  " -NoNewline
 try {
     $baselineStart = Get-Date
     
@@ -156,7 +156,7 @@ try {
     $allFindings += Get-SecurityEventLogConfig
     
     $baselineTime = ((Get-Date) - $baselineStart).TotalSeconds
-       Write-Host "20/20 complete ($([math]::Round($baselineTime,1)))s" -ForegroundColor Green
+       Write-Host "20/20 complete $([math]::Round($baselineTime,1))s" -ForegroundColor Green
 } catch {
     Write-Host "FAILED" -ForegroundColor Red
     Write-Warning "Baseline checks error: $_"
@@ -191,20 +191,41 @@ try {
     $allFindings += Get-ADRecycleBinStatus
     
     $advancedTime = ((Get-Date) - $advancedStart).TotalSeconds
-   Write-Host "20/20 complete ($([math]::Round($advancedTime,1)))s" -ForegroundColor Green
+   Write-Host "20/20 complete ($([math]::Round($advancedTime,1))s)" -ForegroundColor Green
 } catch {
     Write-Host "FAILED" -ForegroundColor Red
     Write-Warning "Advanced checks error: $_"
 }
 
-# Note: Functions 41-60 are placeholders for future implementation
+# Critical Checks (41-50)
 Write-Host "[" -NoNewline
-Write-Host "~" -ForegroundColor Yellow -NoNewline
-Write-Host "] Critical Checks (41-50)........... Planned for future release" -ForegroundColor Yellow
+Write-Host "✓" -ForegroundColor Green -NoNewline
+Write-Host "] Critical Checks (41-50)........... " -NoNewline
+try {
+    $criticalStart = Get-Date
+    
+    $allFindings += Get-UnconstrainedDelegationAccounts
+    $allFindings += Get-GoldenTicketIndicators
+    $allFindings += Get-ShadowCredentialsRisks
+    $allFindings += Get-DCOMPermissionsAudit
+    $allFindings += Get-DCMachineAccountQuota
+    $allFindings += Get-GPOCriticalSecuritySettings
+    $allFindings += Get-EmptyGroupPolicyLinks
+    $allFindings += Get-PrivilegedAccountLoginLocations
+    $allFindings += Get-HighValueTargetExposure
+    $allFindings += Get-SuspiciousServiceAccounts
+    
+    $criticalTime = ((Get-Date) - $criticalStart).TotalSeconds
+   Write-Host "10/10 complete $([math]::Round($criticalTime,1))s" -ForegroundColor Green
+} catch {
+    Write-Host "FAILED" -ForegroundColor Red
+    Write-Warning "Critical checks error: $_"
+}
 
+# Cloud Hybrid Checks (51-60) - Future implementation
 Write-Host "[" -NoNewline
 Write-Host "~" -ForegroundColor Yellow -NoNewline
-Write-Host "] Cloud Hybrid Checks (51-60)....... Planned for future release" -ForegroundColor Yellow
+Write-Host "] Cloud Hybrid Checks (51-60)... .... Planned for future release" -ForegroundColor Yellow
 
 Write-Host ""
 
@@ -213,7 +234,7 @@ Write-Host ""
 #region Generate Summary Statistics
 
 $totalFindings = $allFindings.Count
-$criticalCount = ($allFindings | Where-Object { $_.Severity -eq 'Critical' }).Count
+$criticalCount = ($allFindings | Where-Object { $_. Severity -eq 'Critical' }).Count
 $highCount = ($allFindings | Where-Object { $_.Severity -eq 'High' }).Count
 $mediumCount = ($allFindings | Where-Object { $_.Severity -eq 'Medium' }).Count
 $lowCount = ($allFindings | Where-Object { $_.Severity -eq 'Low' }).Count
@@ -223,16 +244,16 @@ Write-Host "================================================================" -F
 Write-Host "FINDINGS SUMMARY" -ForegroundColor Cyan
 Write-Host "================================================================" -ForegroundColor Cyan
 Write-Host "Total Findings:     $totalFindings"
-Write-Host "Critical:           " -NoNewline
+Write-Host "Critical:            " -NoNewline
 Write-Host $criticalCount -ForegroundColor Red -NoNewline
-Write-Host "   [!!!]" -ForegroundColor Red
+Write-Host "   [!!! ]" -ForegroundColor Red
 Write-Host "High:              " -NoNewline
 Write-Host $highCount -ForegroundColor Magenta -NoNewline
-Write-Host "  [!!]" -ForegroundColor Magenta
+Write-Host "  [!! ]" -ForegroundColor Magenta
 Write-Host "Medium:            " -NoNewline
 Write-Host $mediumCount -ForegroundColor Yellow -NoNewline
 Write-Host "  [!]" -ForegroundColor Yellow
-Write-Host "Low:               $lowCount"
+Write-Host "Low:                $lowCount"
 Write-Host "Info:              $infoCount"
 Write-Host ""
 
@@ -279,7 +300,7 @@ if ($IncludeRawEvidence) {
     $allFindings | Select-Object Timestamp, Category, Id, Severity, Title, Description, Remediation | 
         ConvertTo-Json -Depth 10 | Out-File -Encoding UTF8 $jsonPath
 }
-Write-Host "JSON:     $jsonPath" -ForegroundColor Green
+Write-Host "JSON:      $jsonPath" -ForegroundColor Green
 
 # CSV Export
 $csvPath = Join-Path $OutputPath "$reportBaseName-summary.csv"
@@ -305,7 +326,7 @@ $htmlBody = @"
             background-color: #f5f5f5;
         }
         h1 { 
-            color: #0078D4; 
+            color:  #0078D4; 
             border-bottom: 3px solid #0078D4;
             padding-bottom: 10px;
         }
@@ -313,13 +334,13 @@ $htmlBody = @"
             color: #333;
             margin-top: 30px;
             border-bottom: 2px solid #ddd;
-            padding-bottom: 5px;
+            padding-bottom:  5px;
         }
-        .summary {
+        . summary {
             background-color: white;
             padding: 20px;
             border-radius: 5px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            box-shadow:  0 2px 4px rgba(0,0,0,0.1);
             margin-bottom: 20px;
         }
         .summary-grid {
@@ -328,7 +349,7 @@ $htmlBody = @"
             gap: 15px;
             margin-top: 15px;
         }
-        .summary-item {
+        . summary-item {
             padding: 15px;
             border-radius: 5px;
             text-align: center;
@@ -368,11 +389,11 @@ $htmlBody = @"
             border-bottom: 1px solid #ddd; 
         }
         tr:hover { background-color: #f5f5f5; }
-        .Critical { background-color: #ffebee; border-left: 4px solid #d32f2f; }
+        . Critical { background-color: #ffebee; border-left: 4px solid #d32f2f; }
         .High { background-color: #fff3e0; border-left: 4px solid #f57c00; }
         .Medium { background-color: #fffde7; border-left: 4px solid #fbc02d; }
         .Low { background-color: #f1f8e9; border-left: 4px solid #afb42b; }
-        .Info { background-color: #e3f2fd; border-left: 4px solid #0288d1; }
+        .Info { background-color: #e3f2fd; border-left:  4px solid #0288d1; }
         .severity-badge {
             padding: 4px 8px;
             border-radius: 3px;
@@ -383,7 +404,7 @@ $htmlBody = @"
         .severity-Critical { background-color: #d32f2f; color: white; }
         .severity-High { background-color: #f57c00; color: white; }
         .severity-Medium { background-color: #fbc02d; color: black; }
-        .severity-Low { background-color: #afb42b; color: white; }
+        . severity-Low { background-color:  #afb42b; color:  white; }
         .severity-Info { background-color: #0288d1; color: white; }
         .meta {
             color: #666;
@@ -392,8 +413,8 @@ $htmlBody = @"
             padding-top: 20px;
             border-top: 1px solid #ddd;
         }
-        .filter-buttons {
-            margin: 15px 0;
+        . filter-buttons {
+            margin:  15px 0;
         }
         .filter-btn {
             padding: 8px 15px;
@@ -404,8 +425,12 @@ $htmlBody = @"
             font-weight: bold;
             transition: opacity 0.2s;
         }
-        .filter-btn:hover { opacity: 0.8; }
-        .filter-btn-all { background-color: #0078D4; color: white; }
+        .filter-btn:hover { 
+            opacity: 0.8; 
+        }
+        .filter-btn-all {
+            background-color: #0078D4; color: white;
+        }
         .filter-btn-critical { background-color: #d32f2f; color: white; }
         .filter-btn-high { background-color: #f57c00; color: white; }
         .filter-btn-medium { background-color: #fbc02d; color: black; }
@@ -414,7 +439,7 @@ $htmlBody = @"
         function filterTable(severity) {
             var rows = document.querySelectorAll('#findingsTable tbody tr');
             rows.forEach(function(row) {
-                if (severity === 'all' || row.classList.contains(severity)) {
+                if (severity === 'all' || row. classList.contains(severity)) {
                     row.style.display = '';
                 } else {
                     row.style.display = 'none';
@@ -428,7 +453,7 @@ $htmlBody = @"
     <div class="summary">
         <p><strong>Domain:</strong> $($domain.DNSRoot)</p>
         <p><strong>Forest:</strong> $($forest.RootDomain)</p>
-        <p><strong>Scan Date:</strong> $($startTime.ToString('yyyy-MM-dd HH:mm:ss'))</p>
+        <p><strong>Scan Date:</strong> $($startTime.ToString('yyyy-MM-dd HH: mm:ss'))</p>
         <p><strong>Domain Controllers:</strong> $($dcs.Count)</p>
         <p><strong>Total Findings:</strong> $totalFindings</p>
         
@@ -494,7 +519,7 @@ foreach ($finding in ($allFindings | Sort-Object @{Expression={
                 <td>$($finding.Id)</td>
                 <td><strong>$($finding.Title)</strong></td>
                 <td>$([System.Web.HttpUtility]::HtmlEncode($finding.Description))</td>
-                <td>$([System.Web.HttpUtility]::HtmlEncode($finding.Remediation))</td>
+                <td>$([System.Web.HttpUtility]::HtmlEncode($finding. Remediation))</td>
             </tr>
 "@
 }
@@ -509,7 +534,7 @@ $htmlBody += @"
     <div class="meta">
         <p><strong>Report Generated:</strong> $($endTime.ToString('yyyy-MM-dd HH:mm:ss'))</p>
         <p><strong>Scan Duration:</strong> $([math]::Round($duration.TotalMinutes,2)) minutes</p>
-        <p><strong>Tool:</strong> ADSecurityHealth Complete Edition v2.0</p>
+        <p><strong>Tool:</strong> ADSecurityHealth Complete Edition v2.1</p>
     </div>
 </body>
 </html>
@@ -519,7 +544,7 @@ $htmlBody += @"
 Add-Type -AssemblyName System.Web
 
 $htmlBody | Out-File -Encoding UTF8 $htmlPath
-Write-Host "HTML:     $htmlPath" -ForegroundColor Green
+Write-Host "HTML:      $htmlPath" -ForegroundColor Green
 
 # Executive Summary
 $execPath = Join-Path $OutputPath "$reportBaseName-executive-summary.txt"
@@ -530,9 +555,9 @@ $execSummary = @"
 ACTIVE DIRECTORY SECURITY HEALTH - EXECUTIVE SUMMARY
 ================================================================
 
-Domain:          $($domain.DNSRoot)
-Forest:          $($forest.RootDomain)
-Scan Date:       $($startTime.ToString('yyyy-MM-dd HH:mm:ss'))
+Domain:           $($domain.DNSRoot)
+Forest:          $($forest. RootDomain)
+Scan Date:       $($startTime. ToString('yyyy-MM-dd HH:mm:ss'))
 Scan Duration:   $([math]::Round($duration.TotalMinutes,2)) minutes
 Domain Controllers: $($dcs.Count)
 
@@ -542,8 +567,8 @@ FINDINGS OVERVIEW
 
 Total Findings:  $totalFindings
 
-Critical:        $criticalCount
-High:            $highCount
+Critical:         $criticalCount
+High:             $highCount
 Medium:          $mediumCount
 Low:             $lowCount
 Info:            $infoCount
@@ -574,7 +599,7 @@ TOP 10 FINDINGS (by Severity)
 
 $($allFindings | Where-Object { $_.Severity -in @('Critical','High','Medium') } | 
     Sort-Object @{Expression={
-        switch($_.Severity) {
+        switch($_. Severity) {
             'Critical' {1}
             'High' {2}
             'Medium' {3}
@@ -582,7 +607,7 @@ $($allFindings | Where-Object { $_.Severity -in @('Critical','High','Medium') } 
     }} | 
     Select-Object -First 10 | 
     ForEach-Object { 
-        "[$($_.Severity.ToUpper())] $($_.Id): $($_.Title)`n  Remediation: $($_.Remediation)`n" 
+        "[$($_.Severity. ToUpper())] $($_.Id): $($_.Title)`n  Remediation: $($_.Remediation)`n" 
     } | Out-String)
 
 ================================================================
@@ -592,7 +617,7 @@ CATEGORY BREAKDOWN
 $($allFindings | Group-Object Category | 
     Sort-Object Count -Descending | 
     ForEach-Object { 
-        "$($_.Name.PadRight(25)) : $($_.Count)" 
+        "$($_.Name. PadRight(25)) : $($_.Count)" 
     } | Out-String)
 
 ================================================================
@@ -610,7 +635,7 @@ RECOMMENDATIONS
 REPORTS GENERATED
 ================================================================
 
-HTML Dashboard:      $([System.IO.Path]::GetFileName($htmlPath))
+HTML Dashboard:       $([System.IO.Path]::GetFileName($htmlPath))
 JSON Export:         $([System.IO.Path]::GetFileName($jsonPath))
 CSV Summary:         $([System.IO.Path]::GetFileName($csvPath))
 Executive Summary:   $([System.IO.Path]::GetFileName($execPath))
@@ -619,7 +644,7 @@ Executive Summary:   $([System.IO.Path]::GetFileName($execPath))
 "@
 
 $execSummary | Out-File -Encoding UTF8 $execPath
-Write-Host "Executive:  $execPath" -ForegroundColor Green
+Write-Host "Executive:   $execPath" -ForegroundColor Green
 
 Write-Host ""
 
@@ -634,11 +659,11 @@ if ($EmailReport -and $EmailTo) {
     
     $emailBody = @"
 <html>
-<body style="font-family: Calibri, sans-serif;">
+<body style="font-family:  Calibri, sans-serif;">
 <h2>Active Directory Security Health Report</h2>
 <p><strong>Domain:</strong> $($domain.DNSRoot)</p>
 <p><strong>Scan Date:</strong> $($startTime.ToString('yyyy-MM-dd HH:mm:ss'))</p>
-<p><strong>Duration:</strong> $([math]::Round($duration.TotalMinutes,2)) minutes</p>
+<p><strong>Duration:</strong> $([math]:: Round($duration.TotalMinutes,2)) minutes</p>
 
 <h3>Summary</h3>
 <table border="1" cellpadding="5" cellspacing="0" style="border-collapse: collapse;">
@@ -650,7 +675,7 @@ if ($EmailReport -and $EmailTo) {
     <td>Critical</td>
     <td><strong>$criticalCount</strong></td>
 </tr>
-<tr style="background-color: #fff3e0;">
+<tr style="background-color:  #fff3e0;">
     <td>High</td>
     <td><strong>$highCount</strong></td>
 </tr>
@@ -722,7 +747,7 @@ if ($criticalCount -gt 0) {
 }
 
 Write-Host "Next steps:" -ForegroundColor Cyan
-Write-Host "1. Review HTML dashboard:  $([System.IO.Path]::GetFileName($htmlPath))" -ForegroundColor Gray
+Write-Host "1. Review HTML dashboard:   $([System.IO.Path]::GetFileName($htmlPath))" -ForegroundColor Gray
 Write-Host "2. Address Critical/High findings" -ForegroundColor Gray
 Write-Host "3. Schedule follow-up scan in 30 days" -ForegroundColor Gray
 Write-Host ""
