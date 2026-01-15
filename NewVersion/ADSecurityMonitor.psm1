@@ -328,26 +328,31 @@ function Test-PrivilegedAccountsWithSPN {
     param()
     
     $privilegedGroups = @("Domain Admins", "Enterprise Admins", "Schema Admins", "Administrators")
-    $privilegedUsers = foreach ($group in $privilegedGroups) {
-        Get-ADGroupMember -Identity $group -Recursive | Where-Object {$_.objectClass -eq 'user'}
-    } | Select-Object -Unique
+
+    # Build list of privileged users explicitly, then de-duplicate
+    $privilegedUsers = @()
+    foreach ($group in $privilegedGroups) {
+        $privilegedUsers += Get-ADGroupMember -Identity $group -Recursive |
+            Where-Object { $_.objectClass -eq 'user' }
+    }
+    $privilegedUsers = $privilegedUsers | Select-Object -Unique
     
     $results = @()
     foreach ($user in $privilegedUsers) {
         $userObj = Get-ADUser -Identity $user -Properties ServicePrincipalName
-        if ($userObj. ServicePrincipalName) {
+        if ($userObj.ServicePrincipalName) {
             $results += $userObj
         }
     }
     
     [PSCustomObject]@{
-        CheckName = "Privileged Accounts with SPNs"
-        Severity = "HIGH"
-        Status = if ($results.Count -gt 0) { "FAIL" } else { "PASS" }
+        CheckName        = "Privileged Accounts with SPNs"
+        Severity         = "HIGH"
+        Status           = if ($results.Count -gt 0) { "FAIL" } else { "PASS" }
         AffectedAccounts = $results.Count
-        Details = $results | Select-Object Name, SamAccountName, ServicePrincipalName
-        Recommendation = "Remove SPNs from privileged accounts or use separate service accounts"
-        Risk = "Kerberoasting attacks targeting privileged accounts"
+        Details          = $results | Select-Object Name, SamAccountName, ServicePrincipalName
+        Recommendation   = "Remove SPNs from privileged accounts or use separate service accounts"
+        Risk             = "Kerberoasting attacks targeting privileged accounts"
     }
 }
 
@@ -1855,8 +1860,9 @@ function Test-DHCPSettingsForDNS {
     param()
 
     try {
-        $scopes = Get-DhcpServerv4Scope -ErrorAction Stop
+        $scopes  = Get-DhcpServerv4Scope -ErrorAction Stop
         $results = @()
+
         foreach ($s in $scopes) {
             $p = Get-DhcpServerv4Scope -ScopeId $s.ScopeId | Select-Object -ExpandProperty State
             $results += [PSCustomObject]@{
@@ -1871,8 +1877,8 @@ function Test-DHCPSettingsForDNS {
             Severity       = "MEDIUM"
             Status         = "INFO"
             Details        = $results
-            Recommendation = "Ensure DHCP is configured for secure dynamic DNS registration"
-            Risk           = "Improper DHCP/DNS configuration can open spoofing vectors"
+            Recommendation = "Ensure DHCP is configured for secure dynamic DNS registration."
+            Risk           = "Improper DHCP/DNS configuration can open spoofing vectors."
         }
     } catch {
         [PSCustomObject]@{
@@ -1880,7 +1886,7 @@ function Test-DHCPSettingsForDNS {
             Severity       = "MEDIUM"
             Status         = "INFO"
             Details        = $_.Exception.Message
-            Recommendation = "Unable to query DHCP – run locally on DHCP servers if needed"
+            Recommendation = "Unable to query DHCP - run locally on DHCP servers if needed."
             Risk           = "Unknown"
         }
     }
