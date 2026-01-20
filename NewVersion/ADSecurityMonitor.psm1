@@ -2048,6 +2048,306 @@ function Test-UsersWithManyGroupMemberships {
     }
 }
 
+function Test-DefaultAdministrator {
+    <#
+    .SYNOPSIS
+        Placeholder: Check default Administrator account configuration
+    .DESCRIPTION
+        TODO: Implement logic to verify that the built-in Administrator account is renamed and/or disabled.
+    #>
+    [CmdletBinding()]
+    param()
+    
+    [PSCustomObject]@{
+        CheckName      = "Default Administrator Account"
+        Severity       = "HIGH"
+        Status         = "NOT IMPLEMENTED"
+        Details        = $null
+        Recommendation = "Implement Test-DefaultAdministrator to verify built-in Administrator account hardening"
+        Risk           = "Default Administrator account may be enabled, predictable, or poorly secured"
+    }
+}
+
+function Test-DefaultGuestAccount {
+    <#
+    .SYNOPSIS
+        Placeholder: Check default Guest account configuration
+    .DESCRIPTION
+        TODO: Implement logic to verify that the built-in Guest account is disabled.
+    #>
+    [CmdletBinding()]
+    param()
+    
+    [PSCustomObject]@{
+        CheckName      = "Default Guest Account"
+        Severity       = "MEDIUM"
+        Status         = "NOT IMPLEMENTED"
+        Details        = $null
+        Recommendation = "Implement Test-DefaultGuestAccount to verify built-in Guest account is disabled"
+        Risk           = "Guest account may allow anonymous or low-friction access"
+    }
+}
+
+function Test-EmptyOUs {
+    <#
+    .SYNOPSIS
+        Placeholder: Identify empty Organizational Units
+    .DESCRIPTION
+        TODO: Implement logic to list OUs without child objects.
+    #>
+    [CmdletBinding()]
+    param()
+    
+    [PSCustomObject]@{
+        CheckName      = "Empty OUs"
+        Severity       = "LOW"
+        Status         = "NOT IMPLEMENTED"
+        Details        = $null
+        Recommendation = "Implement Test-EmptyOUs to identify and clean up unused organizational units"
+        Risk           = "Unused OUs can clutter AD and hide misconfigurations"
+    }
+}
+
+function Test-DuplicateSPNs {
+    <#
+    .SYNOPSIS
+        Placeholder: Check for duplicate Service Principal Names
+    .DESCRIPTION
+        TODO: Implement logic to search for duplicate SPNs across accounts.
+    #>
+    [CmdletBinding()]
+    param()
+    
+    [PSCustomObject]@{
+        CheckName      = "Duplicate SPNs"
+        Severity       = "HIGH"
+        Status         = "NOT IMPLEMENTED"
+        Details        = $null
+        Recommendation = "Implement Test-DuplicateSPNs to identify conflicting SPN registrations"
+        Risk           = "Duplicate SPNs may cause authentication issues and be abused for Kerberos attacks"
+    }
+}
+
+function Test-DNSScavenging {
+    <#
+    .SYNOPSIS
+        Placeholder: Check DNS scavenging configuration
+    .DESCRIPTION
+        TODO: Implement logic to ensure DNS scavenging is enabled and correctly configured on DNS servers.
+    #>
+    [CmdletBinding()]
+    param()
+    
+    [PSCustomObject]@{
+        CheckName      = "DNS Scavenging"
+        Severity       = "MEDIUM"
+        Status         = "NOT IMPLEMENTED"
+        Details        = $null
+        Recommendation = "Implement Test-DNSScavenging to verify stale DNS records are automatically cleaned up"
+        Risk           = "Stale DNS records can enable spoofing and lateral movement"
+    }
+}
+
+function Test-RecycleBinEnabled {
+    <#
+    .SYNOPSIS
+        Placeholder: Check if Active Directory Recycle Bin is enabled
+    .DESCRIPTION
+        TODO: Implement logic using Get-ADOptionalFeature to verify AD Recycle Bin status.
+    #>
+    [CmdletBinding()]
+    param()
+    
+    [PSCustomObject]@{
+        CheckName      = "AD Recycle Bin Enabled"
+        Severity       = "MEDIUM"
+        Status         = "NOT IMPLEMENTED"
+        Details        = $null
+        Recommendation = "Implement Test-RecycleBinEnabled to verify AD Recycle Bin is enabled for object recovery"
+        Risk           = "Accidental deletions may be harder or impossible to recover"
+    }
+}
+
+function Test-FineGrainedPasswordPolicies {
+    <#
+    .SYNOPSIS
+        Placeholder: Check fine-grained password policies
+    .DESCRIPTION
+        TODO: Implement logic to enumerate and validate fine-grained password policies (PSO).
+    #>
+    [CmdletBinding()]
+    param()
+    
+    [PSCustomObject]@{
+        CheckName      = "Fine-Grained Password Policies"
+        Severity       = "MEDIUM"
+        Status         = "NOT IMPLEMENTED"
+        Details        = $null
+        Recommendation = "Implement Test-FineGrainedPasswordPolicies to ensure PSOs are defined and applied correctly"
+        Risk           = "Inconsistent or weak password policies for privileged or sensitive accounts"
+    }
+}
+
+function Test-DHCPAuthorization {
+    <#
+    .SYNOPSIS
+        Placeholder: Check DHCP server authorization in AD
+    .DESCRIPTION
+        TODO: Implement logic to verify that all active DHCP servers are authorized and there are no rogue servers.
+    #>
+    [CmdletBinding()]
+    param()
+    
+    [PSCustomObject]@{
+        CheckName      = "DHCP Authorization"
+        Severity       = "MEDIUM"
+        Status         = "NOT IMPLEMENTED"
+        Details        = $null
+        Recommendation = "Implement Test-DHCPAuthorization to detect unauthorized or rogue DHCP servers"
+        Risk           = "Rogue DHCP servers can redirect traffic and facilitate man-in-the-middle attacks"
+    }
+}
+
+function Test-DFSRBacklogHealth {
+    <#
+    .SYNOPSIS
+        Placeholder: Check DFSR backlog and replication health
+    .DESCRIPTION
+        TODO: Implement logic to check DFSR replication backlog for SYSVOL and other critical replicated folders.
+    #>
+    [CmdletBinding()]
+    param()
+    
+    [PSCustomObject]@{
+        CheckName      = "DFSR Backlog Health"
+        Severity       = "MEDIUM"
+        Status         = "NOT IMPLEMENTED"
+        Details        = $null
+        Recommendation = "Implement Test-DFSRBacklogHealth to ensure SYSVOL and other DFSR replicas are healthy"
+        Risk           = "Replication delays or failures may cause inconsistent policies and configurations"
+    }
+}
+
+function Test-OrphanedForeignSecurityPrincipals {
+    <#
+    .SYNOPSIS
+        Placeholder: Identify orphaned Foreign Security Principals
+    .DESCRIPTION
+        TODO: Implement logic to find FSPs that no longer map to valid external objects.
+    #>
+    [CmdletBinding()]
+    param()
+    
+    [PSCustomObject]@{
+        CheckName      = "Orphaned Foreign Security Principals"
+        Severity       = "LOW"
+        Status         = "NOT IMPLEMENTED"
+        Details        = $null
+        Recommendation = "Implement Test-OrphanedForeignSecurityPrincipals to clean up unused external security principals"
+        Risk           = "Orphaned objects clutter AD and may mask permission issues"
+    }
+}
+
+function Test-DomainControllerTime {
+    <#
+    .SYNOPSIS
+        Placeholder: Check domain controller time synchronization
+    .DESCRIPTION
+        TODO: Implement logic to compare DC time to a reference and ensure time skew is within acceptable bounds.
+    #>
+    [CmdletBinding()]
+    param()
+    
+    [PSCustomObject]@{
+        CheckName      = "Domain Controller Time Sync"
+        Severity       = "HIGH"
+        Status         = "NOT IMPLEMENTED"
+        Details        = $null
+        Recommendation = "Implement Test-DomainControllerTime to verify consistent, synchronized time across DCs"
+        Risk           = "Significant time skew can break Kerberos and authentication"
+    }
+}
+
+function Test-DomainFunctionalLevel {
+    <#
+    .SYNOPSIS
+        Placeholder: Check domain and forest functional levels
+    .DESCRIPTION
+        TODO: Implement logic to ensure functional levels are at least a defined minimum (e.g., 2016).
+    #>
+    [CmdletBinding()]
+    param()
+    
+    [PSCustomObject]@{
+        CheckName      = "Domain Functional Level"
+        Severity       = "MEDIUM"
+        Status         = "NOT IMPLEMENTED"
+        Details        = $null
+        Recommendation = "Implement Test-DomainFunctionalLevel to verify modern functional levels are used"
+        Risk           = "Low functional levels may lack security features and hardening"
+    }
+}
+
+function Test-ADBackupAge {
+    <#
+    .SYNOPSIS
+        Placeholder: Check age of Active Directory system state backups
+    .DESCRIPTION
+        TODO: Implement logic to check when the last AD/system state backup was taken.
+    #>
+    [CmdletBinding()]
+    param()
+    
+    [PSCustomObject]@{
+        CheckName      = "AD Backup Age"
+        Severity       = "HIGH"
+        Status         = "NOT IMPLEMENTED"
+        Details        = $null
+        Recommendation = "Implement Test-ADBackupAge to ensure regular AD/system state backups"
+        Risk           = "Without recent backups, AD recovery from corruption or compromise may be impossible"
+    }
+}
+
+function Test-CompromisedPasswordCheck {
+    <#
+    .SYNOPSIS
+        Placeholder: Check passwords against compromised password lists
+    .DESCRIPTION
+        TODO: Implement logic to integrate with a compromised password service (e.g. Have I Been Pwned) or local list.
+    #>
+    [CmdletBinding()]
+    param()
+    
+    [PSCustomObject]@{
+        CheckName      = "Compromised Password Check"
+        Severity       = "HIGH"
+        Status         = "NOT IMPLEMENTED"
+        Details        = $null
+        Recommendation = "Implement Test-CompromisedPasswordCheck to detect accounts using known-compromised passwords"
+        Risk           = "Compromised passwords drastically reduce account security"
+    }
+}
+
+function Test-EventLogConfiguration {
+    <#
+    .SYNOPSIS
+        Placeholder: Check security event log configuration
+    .DESCRIPTION
+        TODO: Implement logic to verify log sizes, retention, and audit policies on domain controllers and critical servers.
+    #>
+    [CmdletBinding()]
+    param()
+    
+    [PSCustomObject]@{
+        CheckName      = "Event Log Configuration"
+        Severity       = "MEDIUM"
+        Status         = "NOT IMPLEMENTED"
+        Details        = $null
+        Recommendation = "Implement Test-EventLogConfiguration to ensure adequate logging and retention for security events"
+        Risk           = "Insufficient logging hinders incident detection and forensic investigations"
+    }
+}
+
 # (At this point, with previous MEDIUM checks plus these, you are around 30â€“35 medium items.
 # For brevity in this message, I'll stop adding more individual medium checks, and instead
 # wire everything into the runners. You can clone/duplicate patterns above for extra checks
