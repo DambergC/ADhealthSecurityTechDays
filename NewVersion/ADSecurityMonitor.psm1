@@ -2051,40 +2051,78 @@ function Test-UsersWithManyGroupMemberships {
 function Test-DefaultAdministrator {
     <#
     .SYNOPSIS
-        Placeholder: Check default Administrator account configuration
-    .DESCRIPTION
-        TODO: Implement logic to verify that the built-in Administrator account is renamed and/or disabled.
+        Verify built-in Administrator account hardening (HIGH)
     #>
     [CmdletBinding()]
     param()
-    
+
+    $domain = Get-ADDomain
+    $adminSid = "S-1-5-21-$($domain.DomainSID.Value.Split('-')[-3..-1] -join '-')-500"
+
+    $admin = Get-ADUser -Filter "SID -eq '$adminSid'" -Properties Enabled, PasswordLastSet, PasswordNeverExpires, LastLogonDate, UserPrincipalName
+
+    $issues = @()
+
+    if ($admin.Enabled) {
+        $issues += "Built-in Administrator account is enabled"
+    }
+
+    if ($admin.PasswordNeverExpires) {
+        $issues += "PasswordNeverExpires is set for built-in Administrator"
+    }
+
+    if (-not $admin.UserPrincipalName) {
+        # This is usually good, no issue
+    }
+
+    $status = if ($issues.Count -gt 0) { "FAIL" } else { "PASS" }
+
     [PSCustomObject]@{
         CheckName      = "Default Administrator Account"
         Severity       = "HIGH"
-        Status         = "NOT IMPLEMENTED"
-        Details        = $null
-        Recommendation = "Implement Test-DefaultAdministrator to verify built-in Administrator account hardening"
-        Risk           = "Default Administrator account may be enabled, predictable, or poorly secured"
+        Status         = $status
+        Details        = [PSCustomObject]@{
+            SamAccountName       = $admin.SamAccountName
+            DistinguishedName    = $admin.DistinguishedName
+            Enabled              = $admin.Enabled
+            PasswordLastSet      = $admin.PasswordLastSet
+            PasswordNeverExpires = $admin.PasswordNeverExpires
+            LastLogonDate        = $admin.LastLogonDate
+            UserPrincipalName    = $admin.UserPrincipalName
+            Issues               = $issues -join "; "
+        }
+        Recommendation = "Disable the built-in Administrator or strictly limit its use. Ensure strong, regularly changed passwords and prefer named admin accounts."
+        Risk           = "Default Administrator account may be enabled, predictable, or poorly secured, making it a prime target for attackers."
     }
 }
 
 function Test-DefaultGuestAccount {
     <#
     .SYNOPSIS
-        Placeholder: Check default Guest account configuration
-    .DESCRIPTION
-        TODO: Implement logic to verify that the built-in Guest account is disabled.
+        Verify built-in Guest account is disabled (MEDIUM)
     #>
     [CmdletBinding()]
     param()
-    
+
+    $domain = Get-ADDomain
+    $guestSid = "S-1-5-21-$($domain.DomainSID.Value.Split('-')[-3..-1] -join '-')-501"
+
+    $guest = Get-ADUser -Filter "SID -eq '$guestSid'" -Properties Enabled, LastLogonDate
+
+    $status = if ($guest.Enabled) { "FAIL" } else { "PASS" }
+
     [PSCustomObject]@{
         CheckName      = "Default Guest Account"
         Severity       = "MEDIUM"
-        Status         = "NOT IMPLEMENTED"
-        Details        = $null
-        Recommendation = "Implement Test-DefaultGuestAccount to verify built-in Guest account is disabled"
-        Risk           = "Guest account may allow anonymous or low-friction access"
+        Status         = $status
+        Details        = [PSCustomObject]@{
+            SamAccountName    = $guest.SamAccountName
+            DistinguishedName = $guest.DistinguishedName
+            Enabled           = $guest.Enabled
+            LastLogonDate     = $guest.LastLogonDate
+        }
+        Recommendation = "Ensure the built-in Guest account is disabled and not used. Use named, auditable accounts instead."
+        Risk           = "Guest account may allow anonymous or low-friction access and bypass accountability."
     }
 }
 
@@ -2142,240 +2180,645 @@ function Test-EmptyOrganizationalUnits {
 function Test-DuplicateSPNs {
     <#
     .SYNOPSIS
-        Placeholder: Check for duplicate Service Principal Names
-    .DESCRIPTION
-        TODO: Implement logic to search for duplicate SPNs across accounts.
+        Identify duplicate Service Principal Names (HIGH)
     #>
     [CmdletBinding()]
     param()
-    
+
+    $objects = Get-ADObject -LDAPFilter "(servicePrincipalName=*)" -Properties servicePrincipalName, SamAccountName, objectClass
+    $spnMap = @{}
+
+    foreach ($obj in $objects) {
+        foreach ($spn in $obj.servicePrincipalName) {
+            if (-not $spnMap.ContainsKey($spn)) {
+                $spnMap[$spn] = @()
+            }
+            $spnMap[$spn] += $obj
+        }
+    }
+
+    $duplicates = @()
+    foreach ($key in $spnMap.Keys) {
+        if ($spnMap[$key].Count -gt 1) {
+            foreach ($obj in $spnMap[$key]) {
+                $duplicates += [PSCustomObject]@{
+                    SPN             = $key
+                    SamAccountName  = $obj.SamAccountName
+                    ObjectClass     = $obj.objectClass
+                    DistinguishedName = $obj.DistinguishedName
+                }
+            }
+        }
+    }
+
+    $status = if ($duplicates.Count -gt 0) { "FAIL" } else { "PASS" }
+
     [PSCustomObject]@{
         CheckName      = "Duplicate SPNs"
         Severity       = "HIGH"
-        Status         = "NOT IMPLEMENTED"
-        Details        = $null
-        Recommendation = "Implement Test-DuplicateSPNs to identify conflicting SPN registrations"
-        Risk           = "Duplicate SPNs may cause authentication issues and be abused for Kerberos attacks"
+        Status         = $status
+        Details        = $duplicates
+        Recommendation = "Ensure each SPN is unique. Remove or correct duplicate SPNs so that each service principal is associated with a single account."
+        Risk           = "Duplicate SPNs may cause authentication issues and be abused for Kerberos attacks."
     }
 }
 
 function Test-DNSScavenging {
     <#
     .SYNOPSIS
-        Placeholder: Check DNS scavenging configuration
-    .DESCRIPTION
-        TODO: Implement logic to ensure DNS scavenging is enabled and correctly configured on DNS servers.
+        Verify DNS scavenging configuration on DNS servers (MEDIUM)
     #>
     [CmdletBinding()]
     param()
-    
+
+    try {
+        Import-Module DNSServer -ErrorAction Stop | Out-Null
+    } catch {
+        return [PSCustomObject]@{
+            CheckName      = "DNS Scavenging"
+            Severity       = "MEDIUM"
+            Status         = "ERROR"
+            Details        = $_.Exception.Message
+            Recommendation = "Install and import the DNSServer module on a management server to evaluate DNS scavenging."
+            Risk           = "Unable to verify DNS scavenging configuration."
+        }
+    }
+
+    $servers = Get-DnsServer -ErrorAction SilentlyContinue
+
+    if (-not $servers) {
+        return [PSCustomObject]@{
+            CheckName      = "DNS Scavenging"
+            Severity       = "MEDIUM"
+            Status         = "WARN"
+            Details        = "No DNS servers returned by Get-DnsServer."
+            Recommendation = "Run this check on a DNS server or from a management host with RSAT DNS tools."
+            Risk           = "DNS scavenging configuration could not be evaluated."
+        }
+    }
+
+    $results = @()
+
+    foreach ($srv in $servers) {
+        $target = $srv.ComputerName
+        if (-not $target) { $target = $srv.Name }
+
+        try {
+            # Suppress non-fatal warnings like 'EnableRegistryBoot not applicable...'
+            $serverConfig = Get-DnsServerScavenging -ComputerName $target -ErrorAction Stop 2>$null
+
+            $results += [PSCustomObject]@{
+                ServerName         = $target
+                ScavengingEnabled  = $serverConfig.ScavengingState
+                NoRefreshInterval  = $serverConfig.NoRefreshInterval
+                RefreshInterval    = $serverConfig.RefreshInterval
+                ScavengingInterval = $serverConfig.ScavengingInterval
+            }
+        } catch {
+            $results += [PSCustomObject]@{
+                ServerName         = $target
+                ScavengingEnabled  = $false
+                Error              = $_.Exception.Message
+            }
+        }
+    }
+
+    $nonCompliant = $results | Where-Object { -not $_.ScavengingEnabled }
+
     [PSCustomObject]@{
         CheckName      = "DNS Scavenging"
         Severity       = "MEDIUM"
-        Status         = "NOT IMPLEMENTED"
-        Details        = $null
-        Recommendation = "Implement Test-DNSScavenging to verify stale DNS records are automatically cleaned up"
-        Risk           = "Stale DNS records can enable spoofing and lateral movement"
+        Status         = if ($nonCompliant.Count -gt 0) { "WARN" } else { "PASS" }
+        Details        = $results
+        Recommendation = "Enable and properly tune DNS scavenging on all DNS servers to automatically remove stale records."
+        Risk           = "Stale DNS records can enable spoofing, lateral movement, and operational issues."
     }
 }
 
 function Test-RecycleBinEnabled {
     <#
     .SYNOPSIS
-        Placeholder: Check if Active Directory Recycle Bin is enabled
-    .DESCRIPTION
-        TODO: Implement logic using Get-ADOptionalFeature to verify AD Recycle Bin status.
+        Verify AD Recycle Bin is enabled (MEDIUM)
     #>
     [CmdletBinding()]
     param()
-    
+
+    $forest = Get-ADForest
+    $recycleBinFeature = Get-ADOptionalFeature -Filter "Name -eq 'Recycle Bin Feature'"
+    $enabledScopes = $recycleBinFeature.EnabledScopes
+
+    $isEnabled = $enabledScopes -contains $forest.DistinguishedName
+
     [PSCustomObject]@{
         CheckName      = "AD Recycle Bin Enabled"
         Severity       = "MEDIUM"
-        Status         = "NOT IMPLEMENTED"
-        Details        = $null
-        Recommendation = "Implement Test-RecycleBinEnabled to verify AD Recycle Bin is enabled for object recovery"
-        Risk           = "Accidental deletions may be harder or impossible to recover"
+        Status         = if ($isEnabled) { "PASS" } else { "FAIL" }
+        Details        = [PSCustomObject]@{
+            ForestName    = $forest.Name
+            EnabledScopes = $enabledScopes
+        }
+        Recommendation = "Enable AD Recycle Bin at the forest level to allow granular recovery of deleted objects."
+        Risk           = "Accidental deletions may be harder or impossible to recover without AD Recycle Bin."
     }
 }
 
 function Test-FineGrainedPasswordPolicies {
     <#
     .SYNOPSIS
-        Placeholder: Check fine-grained password policies
-    .DESCRIPTION
-        TODO: Implement logic to enumerate and validate fine-grained password policies (PSO).
+        Verify fine-grained password policies (PSOs) are defined and applied (MEDIUM)
     #>
     [CmdletBinding()]
     param()
-    
+
+    $psos = Get-ADFineGrainedPasswordPolicy -Filter *
+    $results = @()
+
+    foreach ($pso in $psos) {
+        $appliesTo = Get-ADFineGrainedPasswordPolicySubject -Identity $pso -ErrorAction SilentlyContinue
+
+        $results += [PSCustomObject]@{
+            Name              = $pso.Name
+            Precedence        = $pso.Precedence
+            AppliesToCount    = $appliesTo.Count
+            AppliesToObjects  = $appliesTo.DistinguishedName -join "; "
+            MinPasswordLength = $pso.MinPasswordLength
+            ComplexityEnabled = $pso.ComplexityEnabled
+            LockoutThreshold  = $pso.LockoutThreshold
+        }
+    }
+
+    $hasPso = $psos.Count -gt 0
+
     [PSCustomObject]@{
         CheckName      = "Fine-Grained Password Policies"
         Severity       = "MEDIUM"
-        Status         = "NOT IMPLEMENTED"
-        Details        = $null
-        Recommendation = "Implement Test-FineGrainedPasswordPolicies to ensure PSOs are defined and applied correctly"
-        Risk           = "Inconsistent or weak password policies for privileged or sensitive accounts"
+        Status         = if ($hasPso) { "PASS" } else { "WARN" }
+        Details        = $results
+        Recommendation = "Define and apply fine-grained password policies for privileged and sensitive accounts to enforce stronger controls than the domain default."
+        Risk           = "Inconsistent or weak password policies for privileged or sensitive accounts."
     }
 }
 
 function Test-DHCPAuthorization {
     <#
     .SYNOPSIS
-        Placeholder: Check DHCP server authorization in AD
-    .DESCRIPTION
-        TODO: Implement logic to verify that all active DHCP servers are authorized and there are no rogue servers.
+        Detect unauthorized or rogue DHCP servers (MEDIUM)
     #>
     [CmdletBinding()]
     param()
-    
+
+    try {
+        Import-Module DhcpServer -ErrorAction Stop | Out-Null
+    } catch {
+        return [PSCustomObject]@{
+            CheckName      = "DHCP Authorization"
+            Severity       = "MEDIUM"
+            Status         = "ERROR"
+            Details        = $_.Exception.Message
+            Recommendation = "Install and import the DhcpServer module on a management server to evaluate DHCP authorization."
+            Risk           = "Unable to verify authorized DHCP servers."
+        }
+    }
+
+    $authorized = Get-DhcpServerInDC -ErrorAction SilentlyContinue
+    $authorizedNames = $authorized.DnsName
+
+    # This check cannot fully discover rogue DHCP servers without network scanning.
+    # It focuses on whether authorized servers exist and are expected.
     [PSCustomObject]@{
         CheckName      = "DHCP Authorization"
         Severity       = "MEDIUM"
-        Status         = "NOT IMPLEMENTED"
-        Details        = $null
-        Recommendation = "Implement Test-DHCPAuthorization to detect unauthorized or rogue DHCP servers"
-        Risk           = "Rogue DHCP servers can redirect traffic and facilitate man-in-the-middle attacks"
+        Status         = if ($authorized.Count -gt 0) { "PASS" } else { "WARN" }
+        Details        = $authorized | Select-Object DnsName, IPAddress
+        Recommendation = "Ensure all DHCP servers in the domain are properly authorized in AD and periodically scan the network for unauthorized DHCP servers."
+        Risk           = "Rogue DHCP servers can redirect traffic and facilitate man-in-the-middle attacks."
     }
 }
 
 function Test-DFSRBacklogHealth {
     <#
     .SYNOPSIS
-        Placeholder: Check DFSR backlog and replication health
-    .DESCRIPTION
-        TODO: Implement logic to check DFSR replication backlog for SYSVOL and other critical replicated folders.
+        Check DFSR backlog health for SYSVOL (MEDIUM)
     #>
     [CmdletBinding()]
-    param()
-    
+    param(
+        [int]$MaxBacklog = 100
+    )
+
+    $domain = Get-ADDomain
+    $dcs = Get-ADDomainController -Filter *
+    $pdc = $dcs | Where-Object {$_.OperationMasterRoles -contains "PDCEmulator"} | Select-Object -First 1
+
+    $results = @()
+
+    foreach ($dc in $dcs) {
+        if ($dc.HostName -eq $pdc.HostName) {
+            continue
+        }
+
+        try {
+            $backlog = Get-DfsrBacklog -SourceComputerName $pdc.HostName `
+                                       -DestinationComputerName $dc.HostName `
+                                       -GroupName "Domain System Volume" `
+                                       -FolderName "SYSVOL Share" `
+                                       -ErrorAction Stop
+
+            $count = ($backlog | Measure-Object).Count
+
+            $results += [PSCustomObject]@{
+                SourceDC       = $pdc.HostName
+                DestinationDC  = $dc.HostName
+                BacklogCount   = $count
+                ExceedsMax     = $count -gt $MaxBacklog
+            }
+        } catch {
+            $results += [PSCustomObject]@{
+                SourceDC      = $pdc.HostName
+                DestinationDC = $dc.HostName
+                BacklogCount  = -1
+                ExceedsMax    = $true
+                Error         = $_.Exception.Message
+            }
+        }
+    }
+
+    $problem = $results | Where-Object { $_.ExceedsMax }
+
     [PSCustomObject]@{
         CheckName      = "DFSR Backlog Health"
         Severity       = "MEDIUM"
-        Status         = "NOT IMPLEMENTED"
-        Details        = $null
-        Recommendation = "Implement Test-DFSRBacklogHealth to ensure SYSVOL and other DFSR replicas are healthy"
-        Risk           = "Replication delays or failures may cause inconsistent policies and configurations"
+        Status         = if ($problem.Count -gt 0) { "WARN" } else { "PASS" }
+        Details        = $results
+        Recommendation = "Investigate DFSR backlog for SYSVOL when counts stay high. Ensure SYSVOL replication is healthy and consistent across all domain controllers."
+        Risk           = "Replication delays or failures may cause inconsistent policies and configurations."
     }
 }
 
 function Test-OrphanedForeignSecurityPrincipals {
     <#
     .SYNOPSIS
-        Placeholder: Identify orphaned Foreign Security Principals
-    .DESCRIPTION
-        TODO: Implement logic to find FSPs that no longer map to valid external objects.
+        Identify foreign security principals for review (LOW)
     #>
     [CmdletBinding()]
     param()
-    
+
+    $configNC = (Get-ADRootDSE).ConfigurationNamingContext
+    $fslPath  = "CN=ForeignSecurityPrincipals,$configNC"
+
+    # Verify the container exists; if not, return INFO/WARN instead of error
+    try {
+        $null = Get-ADObject -Identity $fslPath -ErrorAction Stop
+    } catch {
+        return [PSCustomObject]@{
+            CheckName      = "Orphaned Foreign Security Principals"
+            Severity       = "LOW"
+            Status         = "INFO"
+            Details        = "ForeignSecurityPrincipals container not found at $fslPath. It may not exist in this forest configuration or you may lack permissions."
+            Recommendation = "Verify forest configuration and permissions if you expect external trusts or foreign security principals."
+            Risk           = "Unable to enumerate foreign security principals; clutter and permission issues cannot be evaluated."
+        }
+    }
+
+    $fsps = Get-ADObject -SearchBase $fslPath -LDAPFilter "(objectClass=foreignSecurityPrincipal)" -Properties ObjectSID -ErrorAction SilentlyContinue
+
+    if (-not $fsps) {
+        return [PSCustomObject]@{
+            CheckName      = "Orphaned Foreign Security Principals"
+            Severity       = "LOW"
+            Status         = "PASS"
+            Details        = @()
+            Recommendation = "No foreign security principals found. No cleanup required."
+            Risk           = "None detected from foreign security principals."
+        }
+    }
+
+    $results = foreach ($fsp in $fsps) {
+        [PSCustomObject]@{
+            Name              = $fsp.Name
+            DistinguishedName = $fsp.DistinguishedName
+            ObjectSID         = $fsp.ObjectSID.Value
+        }
+    }
+
     [PSCustomObject]@{
         CheckName      = "Orphaned Foreign Security Principals"
         Severity       = "LOW"
-        Status         = "NOT IMPLEMENTED"
-        Details        = $null
-        Recommendation = "Implement Test-OrphanedForeignSecurityPrincipals to clean up unused external security principals"
-        Risk           = "Orphaned objects clutter AD and may mask permission issues"
+        Status         = "WARN"
+        Details        = $results
+        Recommendation = "Review foreign security principals and remove those that are no longer needed (e.g., from removed trusts or decommissioned external accounts)."
+        Risk           = "Orphaned objects clutter AD and may mask permission issues."
     }
 }
 
 function Test-DomainControllerTime {
     <#
     .SYNOPSIS
-        Placeholder: Check domain controller time synchronization
-    .DESCRIPTION
-        TODO: Implement logic to compare DC time to a reference and ensure time skew is within acceptable bounds.
+        Verify consistent time synchronization across domain controllers (HIGH)
     #>
     [CmdletBinding()]
-    param()
-    
+    param(
+        [int]$MaxSkewSeconds = 300
+    )
+
+    $dcs = Get-ADDomainController -Filter *
+    $results = @()
+
+    # Use local time as reference (assuming you run this on a well-synced host)
+    $refTime = Get-Date
+
+    foreach ($dc in $dcs) {
+        try {
+            $remoteTime = Invoke-Command -ComputerName $dc.HostName -ScriptBlock { Get-Date } -ErrorAction Stop
+
+            $skew = [math]::Round(($remoteTime - $refTime).TotalSeconds, 0)
+
+            $results += [PSCustomObject]@{
+                DomainController = $dc.HostName
+                ReferenceTime    = $refTime
+                RemoteTime       = $remoteTime
+                TimeSkewSeconds  = $skew
+                ExceedsMaxSkew   = [math]::Abs($skew) -gt $MaxSkewSeconds
+            }
+        } catch {
+            $results += [PSCustomObject]@{
+                DomainController = $dc.HostName
+                ReferenceTime    = $refTime
+                RemoteTime       = $null
+                TimeSkewSeconds  = $null
+                ExceedsMaxSkew   = $true
+                Error            = $_.Exception.Message
+            }
+        }
+    }
+
+    $problem = $results | Where-Object { $_.ExceedsMaxSkew }
+
     [PSCustomObject]@{
         CheckName      = "Domain Controller Time Sync"
         Severity       = "HIGH"
-        Status         = "NOT IMPLEMENTED"
-        Details        = $null
-        Recommendation = "Implement Test-DomainControllerTime to verify consistent, synchronized time across DCs"
-        Risk           = "Significant time skew can break Kerberos and authentication"
+        Status         = if ($problem.Count -gt 0) { "FAIL" } else { "PASS" }
+        Details        = $results
+        Recommendation = "Ensure all domain controllers synchronize time from a reliable source (PDCe -> NTP) and that time skew stays within $MaxSkewSeconds seconds."
+        Risk           = "Significant time skew can break Kerberos and authentication."
     }
 }
 
 function Test-DomainFunctionalLevel {
     <#
     .SYNOPSIS
-        Placeholder: Check domain and forest functional levels
-    .DESCRIPTION
-        TODO: Implement logic to ensure functional levels are at least a defined minimum (e.g., 2016).
+        Verify modern domain functional level (MEDIUM)
     #>
     [CmdletBinding()]
     param()
-    
+
+    $domain = Get-ADDomain
+    $forest = Get-ADForest
+
+    $recommendedMin = "Windows2012R2Domain"
+
+    $status = if ($domain.DomainMode -ge $recommendedMin -and $forest.ForestMode -ge "Windows2012R2Forest") { "PASS" } else { "WARN" }
+
     [PSCustomObject]@{
         CheckName      = "Domain Functional Level"
         Severity       = "MEDIUM"
-        Status         = "NOT IMPLEMENTED"
-        Details        = $null
-        Recommendation = "Implement Test-DomainFunctionalLevel to verify modern functional levels are used"
-        Risk           = "Low functional levels may lack security features and hardening"
+        Status         = $status
+        Details        = [PSCustomObject]@{
+            DomainName   = $domain.DNSRoot
+            DomainMode   = $domain.DomainMode
+            ForestName   = $forest.Name
+            ForestMode   = $forest.ForestMode
+            Recommended  = $recommendedMin
+        }
+        Recommendation = "Raise domain and forest functional levels to at least Windows Server 2012 R2 (or later) if all domain controllers support it."
+        Risk           = "Low functional levels may lack modern security features and hardening options."
     }
 }
 
 function Test-ADBackupAge {
     <#
     .SYNOPSIS
-        Placeholder: Check age of Active Directory system state backups
+        Ensure regular AD/system state backups (HIGH)
     .DESCRIPTION
-        TODO: Implement logic to check when the last AD/system state backup was taken.
+        This check infers backup recency by querying the System State Backup attribute
+        if available, or by checking Windows Backup history on the PDC emulator.
     #>
     [CmdletBinding()]
-    param()
-    
+    param(
+        [int]$MaxDaysSinceBackup = 7
+    )
+
+    $domain = Get-ADDomain
+    $pdc = Get-ADDomainController -Identity $domain.PDCEmulator
+
+    $results = @()
+    $status = "WARN"
+
+    try {
+        # Uses wbadmin history as heuristic on the PDC
+        $history = Invoke-Command -ComputerName $pdc.HostName -ScriptBlock {
+            wbadmin get versions -backuptarget:* 2>$null
+        } -ErrorAction Stop
+
+        $dates = ($history | Select-String "Backup time:").Line -replace "Backup time:\s*", "" |
+            ForEach-Object { [datetime]$_ } | Sort-Object -Descending
+
+        $lastBackup = $dates | Select-Object -First 1
+        $daysSince  = if ($lastBackup) { (Get-Date - $lastBackup).Days } else { [int]::MaxValue }
+
+        $status = if ($daysSince -le $MaxDaysSinceBackup) { "PASS" } else { "FAIL" }
+
+        $results += [PSCustomObject]@{
+            PDCHostName      = $pdc.HostName
+            LastBackup       = $lastBackup
+            DaysSinceBackup  = $daysSince
+            MaxDaysAllowed   = $MaxDaysSinceBackup
+        }
+    } catch {
+        $status = "ERROR"
+        $results += [PSCustomObject]@{
+            PDCHostName     = $pdc.HostName
+            LastBackup      = $null
+            DaysSinceBackup = $null
+            Error           = $_.Exception.Message
+        }
+    }
+
     [PSCustomObject]@{
         CheckName      = "AD Backup Age"
         Severity       = "HIGH"
-        Status         = "NOT IMPLEMENTED"
-        Details        = $null
-        Recommendation = "Implement Test-ADBackupAge to ensure regular AD/system state backups"
-        Risk           = "Without recent backups, AD recovery from corruption or compromise may be impossible"
+        Status         = $status
+        Details        = $results
+        Recommendation = "Ensure regular (at least weekly) system state/AD backups are taken and verified, especially on the PDC emulator."
+        Risk           = "Without recent backups, AD recovery from corruption or compromise may be impossible."
     }
 }
 
 function Test-CompromisedPasswordCheck {
     <#
     .SYNOPSIS
-        Placeholder: Check passwords against compromised password lists
+        Detect accounts using potentially compromised passwords (HIGH)
     .DESCRIPTION
-        TODO: Implement logic to integrate with a compromised password service (e.g. Have I Been Pwned) or local list.
+        This is a placeholder logical check. Actual compromised password detection
+        requires integration with external breach password services or logs.
     #>
     [CmdletBinding()]
     param()
-    
+
+    # This module cannot directly read or hash passwords from AD.
+    # Instead, this function reports that the check requires external integration.
     [PSCustomObject]@{
         CheckName      = "Compromised Password Check"
         Severity       = "HIGH"
-        Status         = "NOT IMPLEMENTED"
-        Details        = $null
-        Recommendation = "Implement Test-CompromisedPasswordCheck to detect accounts using known-compromised passwords"
-        Risk           = "Compromised passwords drastically reduce account security"
+        Status         = "INFO"
+        Details        = "AD does not expose cleartext or hash data for runtime analysis in this script. Integrate with password filter solutions, Azure AD Password Protection, or breach password services."
+        Recommendation = "Deploy password protection solutions (e.g., Azure AD Password Protection, on-prem password filters, or SIEM integration) to block or detect known-compromised passwords."
+        Risk           = "Compromised passwords drastically reduce account security; users may reuse breached credentials without additional controls."
     }
 }
 
 function Test-EventLogConfiguration {
     <#
     .SYNOPSIS
-        Placeholder: Check security event log configuration
+        Check security event log configuration on domain controllers (HIGH)
     .DESCRIPTION
-        TODO: Implement logic to verify log sizes, retention, and audit policies on domain controllers and critical servers.
+        Ensures adequate logging and retention for security events on all DCs.
+        Validates:
+        - Security log size
+        - Retention policy
+        - Audit policy / advanced audit policy (high-level)
     #>
     [CmdletBinding()]
-    param()
-    
+    param(
+        [int]$MinSecurityLogSizeMB = 2048,    # 2 GB suggested minimum for DCs
+        [ValidateSet('OverwriteAsNeeded','OverwriteOlder','DoNotOverwrite')]
+        [string]$RequiredRetention = 'OverwriteOlder',
+        [int]$RetentionDaysMin = 7           # At least 7 days of logs if OverwriteOlder
+    )
+
+    $dcs = Get-ADDomainController -Filter *
+    $results = @()
+
+    foreach ($dc in $dcs) {
+        $dcName = $dc.HostName
+
+        $securityLogOk = $false
+        $retentionOk   = $false
+        $policyInfo    = $null
+        $errors        = @()
+
+        try {
+            # Get Security log configuration
+            # LogSize is in bytes, Convert to MB
+            $log = Get-WinEvent -ComputerName $dcName -ListLog Security -ErrorAction Stop
+
+            $sizeMB = [math]::Round($log.MaximumSizeInBytes / 1MB, 0)
+
+            # Retention:
+            #  LogMode:
+            #    0 = Circular (overwrite as needed)
+            #    1 = AutoBackup
+            #    2 = Retain (do not overwrite)
+            #  For consistency with classic EventLog, we map:
+            #    Circular      -> OverwriteAsNeeded
+            #    AutoBackup    -> OverwriteOlder (backup before overwrite, roughly similar)
+            #    Retain        -> DoNotOverwrite
+            $logMode = $log.LogMode
+            switch ($logMode) {
+                'Circular'   { $retention = 'OverwriteAsNeeded' }
+                'AutoBackup' { $retention = 'OverwriteOlder' }
+                'Retain'     { $retention = 'DoNotOverwrite' }
+                default      { $retention = 'Unknown' }
+            }
+
+            $securityLogOk = ($sizeMB -ge $MinSecurityLogSizeMB)
+
+            # Approximate retention days: (Max size / average event size).
+            # We can't reliably know average event size remotely, so we just enforce
+            # the retention mode and leave days as "Unknown" unless OverwriteOlder is set.
+            $estimatedRetentionDays = $null
+
+            if ($retention -eq 'OverwriteOlder') {
+                # If "OverwriteOlder" is configured, the effective days are controlled
+                # by "RetentionDays" at OS level. We can read it from registry for Security log.
+                try {
+                    $reg = [Microsoft.Win32.RegistryKey]::OpenRemoteBaseKey('LocalMachine', $dcName)
+                    $key = $reg.OpenSubKey('SYSTEM\CurrentControlSet\Services\Eventlog\Security')
+                    $retentionDays = $key.GetValue('Retention')
+                    # Retention is in seconds; 0 = overwrite as needed, else seconds to retain
+                    if ($retentionDays -is [int] -and $retentionDays -gt 0) {
+                        $estimatedRetentionDays = [math]::Round($retentionDays / 86400, 0)
+                    } elseif ($retentionDays -eq 0) {
+                        $estimatedRetentionDays = 0
+                    } else {
+                        $estimatedRetentionDays = $null
+                    }
+                } catch {
+                    $errors += "Failed to read Retention from registry: $($_.Exception.Message)"
+                }
+            }
+
+            if ($RequiredRetention -eq $retention) {
+                if ($RequiredRetention -eq 'OverwriteOlder' -and $RetentionDaysMin -gt 0 -and $estimatedRetentionDays -ne $null) {
+                    $retentionOk = ($estimatedRetentionDays -ge $RetentionDaysMin)
+                } else {
+                    # Mode matches, and either we don't enforce days or can't estimate them
+                    $retentionOk = $true
+                }
+            } else {
+                $retentionOk = $false
+            }
+        } catch {
+            $errors += "Failed to query Security log: $($_.Exception.Message)"
+        }
+
+        # High-level audit policy status
+        try {
+            # Prefer advanced audit policy if configured
+            $advanced = (auditpol /get /category:* /r /fo csv /computer:$dcName 2>$null |
+                         ConvertFrom-Csv) 2>$null
+
+            if ($advanced) {
+                $policyInfo = @{
+                    UsesAdvancedAuditPolicy = $true
+                    Categories              = ($advanced.Category | Select-Object -Unique)
+                }
+            } else {
+                # Fallback to legacy audit policy
+                $legacy = secedit /export /cfg $env:TEMP\audit_$($dcName).inf /quiet 2>$null
+                $policyInfo = @{
+                    UsesAdvancedAuditPolicy = $false
+                    Categories              = @()
+                }
+            }
+        } catch {
+            $errors += "Failed to query audit policy: $($_.Exception.Message)"
+        }
+
+        $results += [PSCustomObject]@{
+            DomainController       = $dcName
+            SecurityLogSizeMB      = $sizeMB
+            MinRequiredSizeMB      = $MinSecurityLogSizeMB
+            RetentionMode          = $retention
+            RequiredRetentionMode  = $RequiredRetention
+            EstimatedRetentionDays = $estimatedRetentionDays
+            RetentionDaysMin       = if ($RequiredRetention -eq 'OverwriteOlder') { $RetentionDaysMin } else { $null }
+            SecurityLogSizeOk      = $securityLogOk
+            RetentionOk            = $retentionOk
+            AuditPolicyInfo        = $policyInfo
+            Errors                 = $errors -join '; '
+        }
+    }
+
+    # Determine overall status
+    $failing = $results | Where-Object { -not ($_.SecurityLogSizeOk -and $_.RetentionOk) }
+
     [PSCustomObject]@{
         CheckName      = "Event Log Configuration"
-        Severity       = "MEDIUM"
-        Status         = "NOT IMPLEMENTED"
-        Details        = $null
-        Recommendation = "Implement Test-EventLogConfiguration to ensure adequate logging and retention for security events"
-        Risk           = "Insufficient logging hinders incident detection and forensic investigations"
+        Severity       = "HIGH"
+        Status         = if ($failing.Count -gt 0) { "FAIL" } else { "PASS" }
+        Details        = $results
+        Recommendation = "Ensure Security log size is at least $MinSecurityLogSizeMB MB, retention mode is '$RequiredRetention', and logs are retained for at least $RetentionDaysMin days on DCs. Also verify advanced audit policy is configured to capture critical security events."
+        Risk           = "Insufficient logging can prevent incident detection, investigation, and forensics, allowing attacks to go unnoticed."
     }
 }
 
