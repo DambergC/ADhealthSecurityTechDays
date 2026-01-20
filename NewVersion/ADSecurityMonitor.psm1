@@ -2088,23 +2088,54 @@ function Test-DefaultGuestAccount {
     }
 }
 
-function Test-EmptyOUs {
+function Test-EmptyOrganizationalUnits {
     <#
     .SYNOPSIS
-        Placeholder: Identify empty Organizational Units
+        Check for empty Organizational Units in Active Directory (HIGH)
     .DESCRIPTION
-        TODO: Implement logic to list OUs without child objects.
+        Enumerates all OUs in the domain and identifies those that have no child objects.
     #>
     [CmdletBinding()]
-    param()
-    
+    param(
+        [switch]$IncludeSystemOUs
+    )
+
+    # Build base filter to exclude system OUs by default
+    $ouFilter = '(&(objectCategory=organizationalUnit))'
+
+    # Optionally exclude some well-known system OUs by DN pattern
+    $excludedOUs = @(
+        "OU=Domain Controllers",
+        "OU=Microsoft Exchange Security Groups",
+        "OU=Microsoft Exchange System Objects"
+    )
+
+    $ous = Get-ADOrganizationalUnit -LDAPFilter $ouFilter -SearchBase (Get-ADDomain).DistinguishedName -SearchScope Subtree
+
+    $emptyOUs = @()
+
+    foreach ($ou in $ous) {
+        if (-not $IncludeSystemOUs) {
+            if ($excludedOUs | Where-Object { $ou.DistinguishedName -like "*$_*" }) {
+                continue
+            }
+        }
+
+        # Count child objects
+        $children = Get-ADObject -Filter * -SearchBase $ou.DistinguishedName -SearchScope OneLevel -ResultSetSize 1
+        if (-not $children) {
+            $emptyOUs += $ou
+        }
+    }
+
     [PSCustomObject]@{
-        CheckName      = "Empty OUs"
-        Severity       = "LOW"
-        Status         = "NOT IMPLEMENTED"
-        Details        = $null
-        Recommendation = "Implement Test-EmptyOUs to identify and clean up unused organizational units"
-        Risk           = "Unused OUs can clutter AD and hide misconfigurations"
+        CheckName     = "Empty Organizational Units"
+        Severity      = "HIGH"
+        Status        = if ($emptyOUs.Count -gt 0) { "WARN" } else { "PASS" }
+        EmptyOUCount  = $emptyOUs.Count
+        Details       = $emptyOUs | Select-Object Name, DistinguishedName
+        Recommendation = "Review and remove or repurpose empty OUs to reduce clutter and potential misconfiguration"
+        Risk          = "Unused OUs can hide misconfigurations and complicate delegation and GPO scoping"
     }
 }
 
@@ -2463,7 +2494,7 @@ function Invoke-ADSecurityAudit {
         Write-Host "Running LOW Severity Checks..." -ForegroundColor Green
         $allResults += Test-DefaultAdministrator
         $allResults += Test-DefaultGuestAccount
-        $allResults += Test-EmptyOUs
+        $allResults += Test-EmptyOrganizationalUnits
         $allResults += Test-DuplicateSPNs
         $allResults += Test-DNSScavenging
         $allResults += Test-RecycleBinEnabled
