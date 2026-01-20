@@ -1667,50 +1667,53 @@ function Test-DCShadowCredentials {
     )
 
     $suspicious = @()
+
     foreach ($objDN in $objectsToCheck) {
-    try {
-        $obj = Get-ADObject -Identity $objDN -Properties ntSecurityDescriptor -ErrorAction Stop
-    }
-    catch [Microsoft.ActiveDirectory.Management.ADIdentityNotFoundException] {
-        $suspicious += [PSCustomObject]@{
-            ObjectDN  = $objDN
-            ExtraACEs = @()
-            Note      = 'Object not found'
+        try {
+            $obj = Get-ADObject -Identity $objDN -Properties ntSecurityDescriptor -ErrorAction Stop
         }
-        continue
-    }
-    catch {
-        $suspicious += [PSCustomObject]@{
-            ObjectDN  = $objDN
-            ExtraACEs = @()
-            Note      = "Error: $($_.Exception.Message)"
+        catch [Microsoft.ActiveDirectory.Management.ADIdentityNotFoundException] {
+            # Object simply doesn't exist in this environment
+            $suspicious += [PSCustomObject]@{
+                ObjectDN  = $objDN
+                ExtraACEs = @()
+                Note      = 'Object not found'
+            }
+            continue
         }
-        continue
-    }
+        catch {
+            # Other lookup error
+            $suspicious += [PSCustomObject]@{
+                ObjectDN  = $objDN
+                ExtraACEs = @()
+                Note      = "Error: $($_.Exception.Message)"
+            }
+            continue
+        }
 
-    $aces = $obj.ntSecurityDescriptor.Access | Where-Object {
-        $_.ActiveDirectoryRights -match 'WriteDacl|WriteOwner'
-    }
+        $aces = $obj.ntSecurityDescriptor.Access | Where-Object {
+            $_.ActiveDirectoryRights -match 'WriteDacl|WriteOwner'
+        }
 
-    $extra = $aces | Where-Object {
-        $_.IdentityReference -notmatch 'Domain Admins|Enterprise Admins|Administrators|SYSTEM'
-    }
+        $extra = $aces | Where-Object {
+            $_.IdentityReference -notmatch 'Domain Admins|Enterprise Admins|Administrators|SYSTEM'
+        }
 
-    if ($extra) {
-        $suspicious += [PSCustomObject]@{
-            ObjectDN  = $objDN
-            ExtraACEs = $extra | Select-Object IdentityReference, ActiveDirectoryRights, AccessControlType
-            Note      = 'Extra ACEs found'
+        if ($extra) {
+            $suspicious += [PSCustomObject]@{
+                ObjectDN  = $objDN
+                ExtraACEs = $extra | Select-Object IdentityReference, ActiveDirectoryRights, AccessControlType
+                Note      = 'Extra ACEs found'
+            }
         }
     }
-}
 
     [PSCustomObject]@{
-        CheckName      = "DC Shadowâ€‘like Directory Permissions"
+        CheckName      = "DC Shadow-like Directory Permissions"
         Severity       = "MEDIUM"
         Status         = if ($suspicious.Count -gt 0) { "WARN" } else { "PASS" }
         Details        = $suspicious
-        Recommendation = "Limit WriteDacl/WriteOwner on root objects to Tierâ€‘0 admins only"
+        Recommendation = "Limit WriteDacl/WriteOwner on root objects to Tier-0 admins only"
         Risk           = "Attackers can create shadow DCs or persist via ACL backdoors"
     }
 }
