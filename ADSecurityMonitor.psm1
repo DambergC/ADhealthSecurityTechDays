@@ -1,14 +1,51 @@
 #Requires -Modules ActiveDirectory
 
 <#
-. SYNOPSIS
+.SYNOPSIS
     Active Directory Security Monitoring Module - Top 100 Security Risks
-. DESCRIPTION
-    Monitor on-premises Active Directory security risks similar to PingCastle report
-    Categorized by Low, Medium, and High severity
+.DESCRIPTION
+    This module performs read-only security checks against Active Directory,
+    domain controllers, and related infrastructure. It is designed to help
+    identify misconfigurations and high-risk settings similar to a PingCastle
+    security report, categorized by LOW, MEDIUM and HIGH severity.
+
+    Use this module with caution:
+    - The functions in this module are primarily ASSESSMENT functions. They
+      collect and report on risky configurations; they do NOT automatically
+      remediate or change settings.
+    - Any remediation based on these results (e.g. changing group membership,
+      registry values, GPOs, service configurations, or KRBTGT passwords) must
+      be planned, tested, and approved according to your organization's change
+      management process.
+    - Some recommendations (such as disabling services, tightening ACLs,
+      altering delegation, changing RODC policies, or resetting KRBTGT) can
+      break applications, trusts or user access if applied incorrectly.
+
+    Always:
+    - Test remediation steps in a non-production environment first.
+    - Take and verify backups (system state, GPOs, CA configuration, etc.).
+    - Coordinate with application owners and operations teams.
+    - Document every change and have a rollback plan.
+
 .NOTES
-    Author: Security Team
+    Author:  Security Team
     Version: 1.0
+
+    DISCLAIMER / USE WITH CAUTION
+
+    By using this module, you acknowledge and agree that:
+    - You are responsible for validating all findings and understanding the
+      potential impact of any remediation actions.
+    - The authors and distributors of this script are not responsible for any
+      disruption, data loss, or security incidents resulting from its use.
+    - All remediation actions should follow your organization's policies,
+      security standards, and risk appetite.
+
+    Recommended usage:
+    - Run in a controlled environment with appropriate privileges.
+    - Review each finding with experienced AD/security administrators.
+    - Implement remediation through documented change processes only after
+      thorough testing and impact analysis.
 #>
 
 # ============================================================================

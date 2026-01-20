@@ -6,6 +6,7 @@ This module provides a PowerShell-based assessment of on‑prem Active Directory
 - Contains many `Test-*` checks (aiming at ~100 individual tests over time)
 - Categorized as **HIGH**, **MEDIUM**, and **LOW** severity
 - Each check focuses on a concrete, actionable risk (configuration, hardening, operational hygiene)
+- Includes optional **remediation helper functions** to assist in fixing certain findings (see [4. Remediation Helpers](#4-remediation-helpers))
 
 Every test function returns a `PSCustomObject` with a common shape, typically including:
 
@@ -223,7 +224,104 @@ You can extend this pattern to calculate a custom “score” or to tag results 
 
 ---
 
-## 4. Mapping to PingCastle / Common Risk Areas
+## 4. Remediation Helpers
+
+In addition to the `Test-*` functions, the module can expose **remediation helper** functions (`Repair-*`, `Invoke-*Remediation`, or similar) designed to assist in fixing specific high‑impact findings in a **scriptable and repeatable** way.
+
+> **Important:**  
+> All remediation helpers are designed for **experienced AD administrators**. Always:
+> - Review the implementation.
+> - Test in a lab / non‑production environment.
+> - Take appropriate backups (GPO, system state, etc.).
+> - Obtain change approvals according to your change management process.
+
+### 4.1 Concept and workflow
+
+The typical workflow is:
+
+1. **Detect** issues using `Test-*` functions.
+2. **Review** the `Recommendation` and `Risk`.
+3. **Plan remediation** and validate impact.
+4. **Optionally call a remediation helper** to automate all or part of the change.
+
+High‑level pattern:
+
+```powershell
+# 1. Run a check
+$result = Test-KrbtgtPasswordAge -MaxDaysOld 180
+
+if ($result.Status -eq 'FAIL') {
+    # 2. Review details
+    $result | Format-List *
+
+    # 3. Run remediation helper (example name)
+    #    Make sure you understand the implications of resetting KRBTGT!
+    Invoke-RepairKrbtgtPassword -WhatIf
+}
+```
+
+Most remediation functions should support:
+
+- `-WhatIf` / `-Confirm` (if they perform changes).
+- Clear logging / verbose output.
+- Parameters to scope which objects are affected (e.g. specific DCs, GPOs, or OUs).
+
+### 4.2 Typical remediation areas
+
+Depending on which helpers you implement in `ADSecurityMonitor.psm1`, you might cover:
+
+- **Account / password risks**
+  - Resetting the **KRBTGT** account in a controlled, phased manner.
+  - Rotating **service account passwords** and moving to **gMSA**.
+  - Enforcing **password expiration** for old or never‑expiring accounts.
+
+- **Group and ACL hardening**
+  - Cleaning **AdminSDHolder** ACLs (only approved admin groups).
+  - Removing **unexpected members** from **DC local Administrators** group.
+  - Tidying **privileged group nesting** (Domain Admins, Enterprise Admins, Schema Admins).
+
+- **Domain policy & configuration**
+  - Reducing **MachineAccountQuota** to 0.
+  - Hardening **null session** configuration.
+  - Disabling **LLMNR** and **NetBIOS‑NS** via GPO.
+  - Ensuring **LAPS** is deployed and linked to the right OUs.
+
+- **DC hardening**
+  - Disabling **SMBv1**, **Print Spooler** on DCs.
+  - Enabling and configuring **Windows Firewall** profiles.
+  - Enabling **BitLocker** on DC OS volumes.
+  - Removing **unauthorized software** from DCs.
+  - Disabling unnecessary remote access services (RemoteRegistry, etc.).
+
+Each remediation helper should clearly document:
+
+- Input parameters.
+- What it changes.
+- Preconditions and required rights.
+- Rollback/mitigation guidance, if applicable.
+
+### 4.3 Enumerating remediation helpers
+
+You can list all remediation-related commands with:
+
+```powershell
+# All commands in the module
+Get-Command -Module ADSecurityMonitor
+
+# Filter common naming patterns
+Get-Command -Module ADSecurityMonitor -Name 'Repair-*','Fix-*','Invoke-*Remediation*'
+```
+
+Once you know the helper’s name, use standard PowerShell help to review usage:
+
+```powershell
+Get-Help Invoke-RepairKrbtgtPassword -Full
+Get-Help Repair-DCLocalAdmins -Examples
+```
+
+---
+
+## 5. Mapping to PingCastle / Common Risk Areas
 
 The module is **inspired by** PingCastle’s risk model. The implemented `Test-*` functions cover, among others:
 
@@ -249,7 +347,7 @@ You can:
 
 ---
 
-## 5. Scheduling and Automation
+## 6. Scheduling and Automation
 
 To run the checks regularly, you can schedule a script that imports the module, runs the desired tests, and exports to CSV / HTML / your monitoring system.
 
@@ -279,7 +377,7 @@ powershell.exe -ExecutionPolicy Bypass -File C:\Scripts\Run-ADSecurityAudit.ps1
 
 ---
 
-## 6. Requirements / Notes
+## 7. Requirements / Notes
 
 - Run from a host with:
   - RSAT / AD DS tools (`ActiveDirectory` module) installed.
@@ -293,7 +391,7 @@ powershell.exe -ExecutionPolicy Bypass -File C:\Scripts\Run-ADSecurityAudit.ps1
 
 ---
 
-## 7. Extending the Module
+## 8. Extending the Module
 
 To add new checks:
 
@@ -313,4 +411,13 @@ To add new checks:
 
 3. Optionally add your new function into any wrapper/orchestrator function (e.g. `Invoke-ADSecurityAudit`) so that it runs as part of the normal audit.
 
-This approach keeps the module easy to maintain while allowing you to tailor it to your environment’s specific risks.
+To add remediation helpers:
+
+1. Implement a `Repair-*` / `Invoke-*Remediation` function alongside the relevant `Test-*`.
+2. Ensure it is:
+   - Idempotent where possible.
+   - Safe to run with `-WhatIf` / `-Confirm`.
+   - Well-documented via `Get-Help`.
+3. Reference it from the related `Test-*` function’s `Recommendation` text so operators know a helper exists.
+
+This approach keeps the module easy to maintain while allowing you to tailor it to your environment’s specific risks and to automate both **detection** and **remediation** in a controlled way.
