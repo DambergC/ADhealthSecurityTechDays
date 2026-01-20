@@ -1,30 +1,39 @@
 # ADSecurityMonitor – Active Directory Security Risk Checks
 
-This module provides a large set of PowerShell checks (80+ individual tests) to assess on‑prem Active Directory security posture, roughly aligned to the kinds of findings you see in a PingCastle report:
+This module provides a PowerShell-based assessment of on‑prem Active Directory security posture, inspired by the types of findings you see in PingCastle.
 
-- Categorized as **HIGH**, **MEDIUM**, and **LOW**.
-- Each function returns a `PSCustomObject` with:
-  - `CheckName`
-  - `Severity`
-  - `Status` (`PASS`, `FAIL`, `WARN`, `INFO`, `ERROR`)
-  - Plus details and recommendations.
+- Implemented as a single module file: `ADSecurityMonitor.psm1`
+- Contains many `Test-*` checks (aiming at ~100 individual tests over time)
+- Categorized as **HIGH**, **MEDIUM**, and **LOW** severity
+- Each check focuses on a concrete, actionable risk (configuration, hardening, operational hygiene)
 
-> This is not a replacement for PingCastle, but gives you scriptable checks you can run on a schedule and compare with PingCastle output.
+Every test function returns a `PSCustomObject` with a common shape, typically including:
+
+- `CheckName`
+- `Severity` (HIGH, MEDIUM, LOW)
+- `Status` (`PASS`, `FAIL`, `WARN`, `INFO`, `ERROR`)
+- One or more detail properties (e.g. `Details`, `AffectedComputers`, `DaysOld`, etc.)
+- `Recommendation`
+- `Risk`
+
+> This module is not a replacement for PingCastle. It is a scriptable, extensible way to monitor many of the same risk areas on a schedule, export results, and integrate with your own reporting/alerting.
 
 ---
 
 ## 1. Installation
 
-1. Save the module file:
+1. Copy the module to a standard PowerShell module path on an admin workstation or management server (with RSAT / AD tools installed):
 
    ```powershell
-   # On an admin workstation or management server
-   $modulePath = "C:\Program Files\WindowsPowerShell\Modules\ADSecurityMonitor"
-   New-Item -ItemType Directory -Path $modulePath -Force | Out-Null
-   Copy-Item .\ADSecurityMonitor.psm1 $modulePath\
+   $moduleRoot = "C:\Program Files\WindowsPowerShell\Modules\ADSecurityMonitor"
+   New-Item -ItemType Directory -Path $moduleRoot -Force | Out-Null
+   Copy-Item .\ADSecurityMonitor.psm1 $moduleRoot\
    ```
 
-2. Ensure the **ActiveDirectory** and (optionally) **GroupPolicy** modules are available on the machine you run it from.
+2. Ensure required modules are present on the machine where you run it:
+
+   - **Required**: `ActiveDirectory`
+   - **Recommended / used by some checks**: Group Policy, DNS / DHCP RSAT tools, BitLocker / storage cmdlets, etc.
 
 3. Import the module:
 
@@ -32,127 +41,276 @@ This module provides a large set of PowerShell checks (80+ individual tests) to 
    Import-Module ADSecurityMonitor
    ```
 
----
-
-## 2. Running Audits
-
-### 2.1 Full audit
+You can verify that the module is loaded and discover available checks with:
 
 ```powershell
-# Run all High, Medium and Low checks
+Get-Command -Module ADSecurityMonitor
+```
+
+---
+
+## 2. Running Security Checks
+
+The module exposes individual `Test-*` functions per risk area. Each function:
+
+- Runs one logical check (e.g. “KRBTGT password age”, “Unconstrained delegation”, “SMBv1 enabled on DCs”)
+- Returns a single `PSCustomObject` summarizing status and key details
+
+You can either:
+
+- Call specific checks manually, or
+- Use a wrapper function (if present in your version of the module, e.g. `Invoke-ADSecurityAudit`) to orchestrate multiple checks.
+
+### 2.1 Running individual checks (examples)
+
+Below are examples taken from the **HIGH severity** section of the module. All of them return a single object with `Status`, `Recommendation`, and `Risk` for easy reporting.
+
+```powershell
+# KRBTGT password age
+Test-KrbtgtPasswordAge -MaxDaysOld 180
+
+# AdminSDHolder ACL modifications
+Test-AdminSDHolder
+
+# Unconstrained delegation on computer accounts
+Test-UnconstrainedDelegation
+
+# AutoLogon registry settings on DCs
+Test-DCRegistryAutoLogon
+
+# NTLM authentication / LMCompatibilityLevel on DCs
+Test-NTLMAuthentication
+
+# Pre-Windows 2000 Compatible Access group members
+Test-PreWindows2000CompatibleAccess
+
+# Print Spooler running on DCs
+Test-DCPrintSpooler
+
+# Protected Users group membership for privileged accounts
+Test-ProtectedUsersGroup
+
+# Unauthorized software on DCs (customizable list)
+Test-DCUnauthorizedSoftware -UnauthorizedSoftware @("*Chrome*", "*Firefox*", "*Skype*", "*Teams*")
+
+# Anonymous / unsigned LDAP behaviour on DCs
+Test-DCAnonymousAccess
+
+# Privileged accounts with SPNs (Kerberoasting risk)
+Test-PrivilegedAccountsWithSPN
+
+# SYSVOL share permissions
+Test-DCSysvolPermissions
+
+# RODC password replication policy
+Test-RODCPasswordReplicationPolicy
+
+# Local Administrators group contents on DCs
+Test-DCLocalAdminGroup
+
+# Remote access / remote administration services on DCs
+Test-DCRemoteAccessServices
+
+# SMBv1 protocol usage on DCs
+Test-SMBv1Protocol
+
+# Windows Firewall profiles enabled on DCs
+Test-DCFirewallStatus
+
+# BitLocker enabled on DC OS volumes
+Test-BitLockerOnDCs
+
+# Null session access / anonymous enumeration settings
+Test-NullSessionAccess
+
+# LLMNR / NetBIOS‑NS disabled on DCs
+Test-LLMNRAndNBTNS
+
+# Privileged group nesting (Domain Admins / Enterprise Admins / Schema Admins)
+Test-PrivilegedGroupsNesting
+
+# DC patch level (days since last installed hotfix)
+Test-DCPatchLevel -DaysSinceLastUpdate 30
+
+# Domain machine account quota (ms-DS-MachineAccountQuota)
+Test-DomainObjectQuota
+
+# GPO backup age and presence
+Test-GPOBackups -BackupPath "\\$( (Get-ADDomain).PDCEmulator )\GPOBackups" -MaxDaysOld 30
+
+# Admin account isolation (separate admin vs. user accounts)
+Test-AdminAccountIsolation
+
+# Service accounts with weak password policy (never expires / very old)
+Test-ServiceAccountPasswords
+
+# AD Certificate Services presence (CA discovery / inventory)
+Test-CertificateServices
+
+# Exchange schema version (for Exchange‑enabled forests)
+Test-ExchangeSchemaVersion
+
+# LAPS deployment (schema and configuration checks – defined later in the module)
+Test-LAPSDeployment
+```
+
+Each call produces a single record. For example:
+
+```powershell
+Test-KrbtgtPasswordAge
+
+CheckName        : KRBTGT Password Age
+Severity         : HIGH
+Status           : FAIL
+PasswordLastSet  : 01/01/2022 10:00:00
+DaysOld          : 380
+MaxAllowed       : 180
+Recommendation   : Reset KRBTGT password immediately if older than 180 days
+Risk             : Golden Ticket attacks possible with compromised old KRBTGT password
+```
+
+You can pipe the combined output from multiple tests into any reporting / export mechanism that fits your environment.
+
+### 2.2 (Optional) Aggregated audit entry point
+
+If your version of `ADSecurityMonitor.psm1` contains a wrapper such as `Invoke-ADSecurityAudit`, you can run a broader audit like:
+
+```powershell
+# All checks
 $results = Invoke-ADSecurityAudit -Severity All
 $results | Format-Table Severity, CheckName, Status
-```
 
-### 2.2 By severity
-
-```powershell
-# High only
+# Only HIGH checks
 Invoke-ADSecurityAudit -Severity High
 
-# Medium only
-Invoke-ADSecurityAudit -Severity Medium
-
-# Low only
-Invoke-ADSecurityAudit -Severity Low
+# Export combined results to CSV
+Invoke-ADSecurityAudit -Severity All |
+    Export-Csv "C:\Reports\ADSecurity-$(Get-Date -Format yyyyMMdd-HHmm).csv" -NoTypeInformation
 ```
 
-### 2.3 Export to CSV for comparison with PingCastle
+If there is no wrapper function in your current commit, you can build one easily by:
 
-```powershell
-$csv = "C:\Reports\ADSecurity-$(Get-Date -Format yyyyMMdd-HHmm).csv"
-Invoke-ADSecurityAudit -Severity All -ExportPath $csv
-```
-
-You can then:
-
-- Map `CheckName` / `Severity` / `Status` to PingCastle categories.
-- Use Excel/Power BI to compare trends over time.
+1. Listing the `Test-*` functions you want to include.
+2. Invoking each in turn.
+3. Collecting and outputting all returned objects.
 
 ---
 
-## 3. Security Score and HTML Report
+## 3. Example: Build Your Own Summary / Score
 
-### 3.1 Overall score
+Since every test returns a similar object, you can:
+
+- Build a simple “scorecard” (count of PASS/FAIL/WARN per severity).
+- Generate custom HTML / email reports.
+- Push results into a SIEM or monitoring platform.
+
+Example (manual composition of checks):
 
 ```powershell
-$score = Get-ADSecurityScore
-$score
+$checks = @()
+$checks += Test-KrbtgtPasswordAge
+$checks += Test-AdminSDHolder
+$checks += Test-UnconstrainedDelegation
+$checks += Test-DCRegistryAutoLogon
+$checks += Test-NTLMAuthentication
+# ... add any additional Test-* functions you want
+
+$summary = $checks | Group-Object Severity, Status | Select-Object Name, Count
+$summary | Format-Table
 ```
 
-Example output:
+You can extend this pattern to calculate a custom “score” or to tag results for dashboards.
+
+---
+
+## 4. Mapping to PingCastle / Common Risk Areas
+
+The module is **inspired by** PingCastle’s risk model. The implemented `Test-*` functions cover, among others:
+
+- **High risks**
+  - KRBTGT account age, unconstrained delegation
+  - AdminSDHolder ACL manipulation
+  - SMBv1 protocol, unsigned / anonymous LDAP, null sessions
+  - DC patch level, firewall status, BitLocker encryption
+  - RODC password replication policy
+  - Privileged accounts with SPNs, privileged group nesting
+  - LAPS deployment, AD CS presence / configuration, Exchange integration
+  - Unauthorized software and dangerous remote services on DCs
+  - Domain object creation quota
+
+- **Medium / Low risks**
+  - Additional configuration and hygiene checks (password policy, stale objects, functional levels, backup age, etc.) defined in later parts of the module.
+
+You can:
+
+- Add your own `Test-*` functions that return the same object layout.
+- Adjust severities (`Severity = "HIGH" | "MEDIUM" | "LOW"`) to mirror your internal risk model.
+- Compare the output with PingCastle reports by matching risk names or categories.
+
+---
+
+## 5. Scheduling and Automation
+
+To run the checks regularly, you can schedule a script that imports the module, runs the desired tests, and exports to CSV / HTML / your monitoring system.
+
+Example scheduled-task script:
+
+```powershell
+Import-Module ADSecurityMonitor
+
+$timestamp = Get-Date -Format yyyyMMdd-HHmm
+$outDir    = "C:\Reports"
+New-Item -ItemType Directory -Path $outDir -Force | Out-Null
+
+# Example using a wrapper – adjust if you run tests manually
+$csvPath  = Join-Path $outDir "ADSecurity-$timestamp.csv"
+$results  = Invoke-ADSecurityAudit -Severity All
+$results  | Export-Csv $csvPath -NoTypeInformation
+
+# Optionally: custom HTML or other export
+# Export-ADSecurityReport -OutputPath (Join-Path $outDir "ADSecurityReport-$timestamp.html")
+```
+
+Then configure a scheduled task to run:
 
 ```text
-TotalChecks     : 82
-Passed          : 60
-Failed          : 10
-Warnings        : 12
-MaxScore        : 540
-EarnedScore     : 410
-ScorePercentage : 75.93
-Rating          : Good
-```
-
-### 3.2 HTML Report
-
-```powershell
-$htmlPath = "C:\Reports\ADSecurityReport-$(Get-Date -Format yyyyMMdd-HHmm).html"
-Export-ADSecurityReport -OutputPath $htmlPath
-Start-Process $htmlPath
-```
-
-The HTML report shows:
-
-- Overall score and rating.
-- A table with all checks, colored by:
-  - Severity (High/Medium/Low)
-  - Status (PASS/FAIL/WARN)
-
----
-
-## 4. Example: Run on a schedule
-
-Basic scheduled task approach:
-
-```powershell
-$script = 'Import-Module ADSecurityMonitor; ' +
-          '$csv = "C:\Reports\ADSecurity-$(Get-Date -Format yyyyMMdd-HHmm).csv"; ' +
-          'Invoke-ADSecurityAudit -Severity All -ExportPath $csv; ' +
-          '$html = "C:\Reports\ADSecurityReport-$(Get-Date -Format yyyyMMdd-HHmm).html"; ' +
-          'Export-ADSecurityReport -OutputPath $html;'
-
-$taskPath = "C:\Scripts\Run-ADSecurityAudit.ps1"
-$script | Out-File -FilePath $taskPath -Encoding UTF8
-
-# Then create a scheduled task that runs:
-# powershell.exe -ExecutionPolicy Bypass -File "C:\Scripts\Run-ADSecurityAudit.ps1"
+powershell.exe -ExecutionPolicy Bypass -File C:\Scripts\Run-ADSecurityAudit.ps1
 ```
 
 ---
 
-## 5. Mapping to PingCastle
+## 6. Requirements / Notes
 
-This module is **inspired by** PingCastle findings, for example:
-
-- **High risks**: KRBTGT age, AdminSDHolder ACLs, unconstrained delegation, SMBv1, LAPS, RODC PRP, DC patching, DC firewall, etc.
-- **Medium risks**: password policy, account lockout, stale accounts, SIDHistory, DES, pre‑auth disabled, dangerous GPO rights, group nesting, operator groups, etc.
-- **Low risks**: Recycle Bin, DNS scavenging, functional level, backup age, event log size, empty OUs, duplicate SPNs.
-
-You can extend the module with your own `Test-*` functions that return the same shape of object; `Invoke-ADSecurityAudit` can be updated to include them.
-
----
-
-## 6. Notes / Requirements
-
-- Must be run with **Domain Admin** or equivalent rights for many checks.
-- Some checks use remote registry, WMI/CIM, and require:
-  - RPC/firewall allowed between the management host and DCs.
-  - Appropriate permissions.
-- Some commands (e.g. `Get-DhcpServerInDC`, `Get-DfsrBacklog`, `Get-DnsServerScavenging`) must be available on the machine (RSAT / AD DS / DNS / DHCP tools installed).
+- Run from a host with:
+  - RSAT / AD DS tools (`ActiveDirectory` module) installed.
+  - Appropriate admin rights (Domain Admin or equivalent is often required).
+- Some checks rely on:
+  - Remote registry access
+  - WMI / CIM (e.g. `Get-WmiObject`, `Get-BitLockerVolume`, `Get-SmbServerConfiguration`)
+  - Network/firewall access from the management host to all domain controllers
+- Optional / environment-specific dependencies:
+  - DNS / DHCP / DFSR / Exchange / AD CS tools for specialized checks.
 
 ---
 
-If you want, I can next:
+## 7. Extending the Module
 
-- Trim/extend to exactly 100 checks and provide a small mapping table to PingCastle categories, or
-- Help you build a comparison script that ingests a PingCastle XML/CSV and lines it up with this module’s results.
+To add new checks:
+
+1. Create a `Test-*` function in `ADSecurityMonitor.psm1`.
+2. Return a single `PSCustomObject` with at least:
+
+   ```powershell
+   [PSCustomObject]@{
+       CheckName      = "Your Check Name"
+       Severity       = "HIGH"  # or MEDIUM / LOW
+       Status         = "PASS"  # or FAIL / WARN / INFO / ERROR
+       Recommendation = "What to do if this fails"
+       Risk           = "Why this matters"
+       # Any other details helpful for triage
+   }
+   ```
+
+3. Optionally add your new function into any wrapper/orchestrator function (e.g. `Invoke-ADSecurityAudit`) so that it runs as part of the normal audit.
+
+This approach keeps the module easy to maintain while allowing you to tailor it to your environment’s specific risks.
