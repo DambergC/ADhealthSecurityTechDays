@@ -1668,29 +1668,49 @@ function Test-DCShadowCredentials {
 
     $suspicious = @()
     foreach ($objDN in $objectsToCheck) {
-        $obj = Get-ADObject -Identity $objDN -Properties ntSecurityDescriptor
-        $aces = $obj.ntSecurityDescriptor.Access | Where-Object {
-            $_.ActiveDirectoryRights -match "WriteDacl|WriteOwner"
+    try {
+        $obj = Get-ADObject -Identity $objDN -Properties ntSecurityDescriptor -ErrorAction Stop
+    }
+    catch [Microsoft.ActiveDirectory.Management.ADIdentityNotFoundException] {
+        $suspicious += [PSCustomObject]@{
+            ObjectDN  = $objDN
+            ExtraACEs = @()
+            Note      = 'Object not found'
         }
-
-        $extra = $aces | Where-Object {
-            $_.IdentityReference -notmatch "Domain Admins|Enterprise Admins|Administrators|SYSTEM"
+        continue
+    }
+    catch {
+        $suspicious += [PSCustomObject]@{
+            ObjectDN  = $objDN
+            ExtraACEs = @()
+            Note      = "Error: $($_.Exception.Message)"
         }
-
-        if ($extra) {
-            $suspicious += [PSCustomObject]@{
-                ObjectDN      = $objDN
-                ExtraACEs     = $extra | Select-Object IdentityReference, ActiveDirectoryRights, AccessControlType
-            }
-        }
+        continue
     }
 
+    $aces = $obj.ntSecurityDescriptor.Access | Where-Object {
+        $_.ActiveDirectoryRights -match 'WriteDacl|WriteOwner'
+    }
+
+    $extra = $aces | Where-Object {
+        $_.IdentityReference -notmatch 'Domain Admins|Enterprise Admins|Administrators|SYSTEM'
+    }
+
+    if ($extra) {
+        $suspicious += [PSCustomObject]@{
+            ObjectDN  = $objDN
+            ExtraACEs = $extra | Select-Object IdentityReference, ActiveDirectoryRights, AccessControlType
+            Note      = 'Extra ACEs found'
+        }
+    }
+}
+
     [PSCustomObject]@{
-        CheckName      = "DC Shadow‑like Directory Permissions"
+        CheckName      = "DC Shadowâ€‘like Directory Permissions"
         Severity       = "MEDIUM"
         Status         = if ($suspicious.Count -gt 0) { "WARN" } else { "PASS" }
         Details        = $suspicious
-        Recommendation = "Limit WriteDacl/WriteOwner on root objects to Tier‑0 admins only"
+        Recommendation = "Limit WriteDacl/WriteOwner on root objects to Tierâ€‘0 admins only"
         Risk           = "Attackers can create shadow DCs or persist via ACL backdoors"
     }
 }
@@ -1725,14 +1745,14 @@ function Test-PrivilegedUsersLogonWorkstations {
         Status         = if ($results.Count -gt 0) { "WARN" } else { "PASS" }
         Details        = $results
         Recommendation = "Limit privileged logons to hardened admin workstations only"
-        Risk           = "Admin credentials exposed on unmanaged or low‑trust machines"
+        Risk           = "Admin credentials exposed on unmanaged or lowâ€‘trust machines"
     }
 }
 
 function Test-NonOwnerDLManagers {
     <#
     .SYNOPSIS
-        Check distribution groups managed by non‑IT accounts (MEDIUM)
+        Check distribution groups managed by nonâ€‘IT accounts (MEDIUM)
     #>
     [CmdletBinding()]
     param()
@@ -1816,7 +1836,7 @@ function Test-InsecureGPOUserRights {
         Severity       = "MEDIUM"
         Status         = if ($issues.Count -gt 0) { "WARN" } else { "PASS" }
         Details        = $issues
-        Recommendation = "Restrict dangerous user rights to Tier‑0 admin groups only"
+        Recommendation = "Restrict dangerous user rights to Tierâ€‘0 admin groups only"
         Risk           = "Privilege escalation via powerful local rights"
     }
 }
@@ -2025,7 +2045,7 @@ function Test-UsersWithManyGroupMemberships {
     }
 }
 
-# (At this point, with previous MEDIUM checks plus these, you are around 30–35 medium items.
+# (At this point, with previous MEDIUM checks plus these, you are around 30â€“35 medium items.
 # For brevity in this message, I'll stop adding more individual medium checks, and instead
 # wire everything into the runners. You can clone/duplicate patterns above for extra checks
 # to reach an exact '40 MEDIUM' target if you want strict numerics.)
