@@ -2822,29 +2822,730 @@ function Test-EventLogConfiguration {
     }
 }
 
-# (At this point, with previous MEDIUM checks plus these, you are around 30â€“35 medium items.
-# For brevity in this message, I'll stop adding more individual medium checks, and instead
-# wire everything into the runners. You can clone/duplicate patterns above for extra checks
-# to reach an exact '40 MEDIUM' target if you want strict numerics.)
+# ============================================================================
+# REMEDIATION FUNCTIONS
+# ============================================================================
 
-# ============================================================================
-# LOW SEVERITY RISKS (already defined earlier)
-#   Test-DefaultAdministrator
-#   Test-DefaultGuestAccount
-#   Test-EmptyOUs
-#   Test-DuplicateSPNs
-#   Test-DNSScavenging
-#   Test-RecycleBinEnabled
-#   Test-FineGrainedPasswordPolicies
-#   Test-DHCPAuthorization
-#   Test-DFSRBacklogHealth
-#   Test-OrphanedForeignSecurityPrincipals
-#   Test-DomainControllerTime
-#   Test-DomainFunctionalLevel
-#   Test-ADBackupAge
-#   Test-CompromisedPasswordCheck
-#   Test-EventLogConfiguration
-# ============================================================================
+function Invoke-KrbtgtPasswordRotation {
+    <#
+    .SYNOPSIS
+        Helper to manage KRBTGT password rotation.
+    .DESCRIPTION
+        Logs current KRBTGT password age. Optionally performs a single password reset.
+        Full Microsoft guidance usually recommends two resets with time between.
+    .PARAMETER Execute
+        Actually perform the reset; otherwise, this is read-only.
+    #>
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [switch]$Execute
+    )
+
+    $krbtgt = Get-ADUser -Identity "krbtgt" -Properties PasswordLastSet
+    $age    = (Get-Date) - $krbtgt.PasswordLastSet
+
+    Write-ADSecLog -Level INFO -Message "KRBTGT PasswordLastSet: $($krbtgt.PasswordLastSet) (Age: $($age.Days) days)" -Context "KRBTGT"
+    Write-ADSecLog -Level WARN -Message "Resetting KRBTGT has forest-wide Kerberos impact. Follow Microsoft guidance." -Context "KRBTGT"
+
+    if (-not $Execute) {
+        Write-ADSecLog -Level WARN -Message "Dry run only. Re-run with -Execute to reset password (subject to -WhatIf/-Confirm)." -Context "KRBTGT"
+        return
+    }
+
+    if ($PSCmdlet.ShouldProcess("krbtgt", "Reset password")) {
+        $newPwd = Read-Host -AsSecureString "Enter new KRBTGT password"
+        Set-ADAccountPassword -Identity "krbtgt" -NewPassword $newPwd
+        Write-ADSecLog -Level INFO -Message "KRBTGT password reset once. Repeat according to Microsoft guidance." -Context "KRBTGT"
+    }
+}
+
+function Repair-AdminSDHolderAcl {
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [string[]]$AllowedPrincipals = @(
+            "NT AUTHORITY\SYSTEM",
+            "Domain Admins",
+            "Enterprise Admins",
+            "Administrators"
+        )
+    )
+
+    $domainDn      = (Get-ADDomain).DistinguishedName
+    $adminSDHolder = Get-ADObject -Identity "CN=AdminSDHolder,CN=System,$domainDn" -Properties ntSecurityDescriptor
+    $acl           = $adminSDHolder.ntSecurityDescriptor
+
+    $unauthorized = $acl.Access | Where-Object {
+        $_.IdentityReference -notin $AllowedPrincipals
+    }
+
+    if (-not $unauthorized) {
+        Write-ADSecLog -Level INFO -Message "No unauthorized ACEs detected on AdminSDHolder." -Context "AdminSDHolder"
+        return
+    }
+
+    foreach ($ace in $unauthorized) {
+        if ($PSCmdlet.ShouldProcess("AdminSDHolder", "Remove ACE for $($ace.IdentityReference)")) {
+            $acl.RemoveAccessRule($ace) | Out-Null
+            Write-ADSecLog -Level INFO -Message "Removed unauthorized ACE: $($ace.IdentityReference)" -Context "AdminSDHolder"
+        }
+    }
+
+    if ($PSCmdlet.ShouldProcess("AdminSDHolder", "Write updated ACL")) {
+        Set-ADObject -Identity $adminSDHolder.DistinguishedName -Replace @{ntSecurityDescriptor = $acl}
+        Write-ADSecLog -Level INFO -Message "Updated AdminSDHolder ACL applied." -Context "AdminSDHolder"
+    }
+}
+
+function Repair-UnconstrainedDelegation {
+    [CmdletBinding(SupportsShouldProcess)]
+    param()
+
+    $computers = Get-ADComputer -Filter {TrustedForDelegation -eq $true -and PrimaryGroupID -eq 515} -Properties TrustedForDelegation
+    if (-not $computers) {
+        Write-ADSecLog -Level INFO -Message "No computers with unconstrained delegation found." -Context "Delegation"
+        return
+    }
+
+    foreach ($c in $computers) {
+        if ($PSCmdlet.ShouldProcess($c.Name, "Disable unconstrained delegation")) {
+            Set-ADAccountControl -Identity $c -TrustedForDelegation:$false
+            Write-ADSecLog -Level INFO -Message "Disabled TrustedForDelegation" -Context $c.Name
+        }
+    }
+}
+
+function Repair-DCAutoLogon {
+    [CmdletBinding(SupportsShouldProcess)]
+    param()
+
+    $dcs = Get-ADDomainController -Filter *
+
+    foreach ($dc in $dcs) {
+        try {
+            $reg = [Microsoft.Win32.RegistryKey]::OpenRemoteBaseKey('LocalMachine', $dc.HostName)
+            $key = $reg.OpenSubKey("SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon", $true)
+            if (-not $key) { continue }
+
+            $autoLogon = $key.GetValue("AutoAdminLogon")
+            if ($autoLogon -ne "1") { continue }
+
+            if ($PSCmdlet.ShouldProcess($dc.HostName, "Disable AutoAdminLogon and clear credentials")) {
+                $key.SetValue("AutoAdminLogon", "0", [Microsoft.Win32.RegistryValueKind]::String)
+                $key.DeleteValue("DefaultUserName", $false)
+                $key.DeleteValue("DefaultPassword", $false)
+                $key.DeleteValue("DefaultDomainName", $false)
+                Write-ADSecLog -Level INFO -Message "Disabled AutoAdminLogon and cleared creds" -Context $dc.HostName
+            }
+        } catch {
+            Write-ADSecLog -Level ERROR -Message "Failed to modify AutoLogon: $($_.Exception.Message)" -Context $dc.HostName
+        }
+    }
+}
+
+function Repair-NTLMAuthentication {
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [int]$DesiredLevel = 5
+    )
+
+    $dcs = Get-ADDomainController -Filter *
+
+    foreach ($dc in $dcs) {
+        try {
+            $reg  = [Microsoft.Win32.RegistryKey]::OpenRemoteBaseKey('LocalMachine', $dc.HostName)
+            $key  = $reg.OpenSubKey("SYSTEM\CurrentControlSet\Control\Lsa", $true)
+            if (-not $key) { continue }
+
+            $current = $key.GetValue("LmCompatibilityLevel", 0)
+            if ($current -ge $DesiredLevel) { continue }
+
+            if ($PSCmdlet.ShouldProcess($dc.HostName, "Set LmCompatibilityLevel to $DesiredLevel")) {
+                $key.SetValue("LmCompatibilityLevel", $DesiredLevel, [Microsoft.Win32.RegistryValueKind]::DWord)
+                Write-ADSecLog -Level INFO -Message "LmCompatibilityLevel $current -> $DesiredLevel" -Context $dc.HostName
+            }
+        } catch {
+            Write-ADSecLog -Level ERROR -Message "Failed to update LmCompatibilityLevel: $($_.Exception.Message)" -Context $dc.HostName
+        }
+    }
+}
+
+function Repair-PreWindows2000CompatibleAccess {
+    [CmdletBinding(SupportsShouldProcess)]
+    param()
+
+    $group = Get-ADGroup -Identity "Pre-Windows 2000 Compatible Access" -Properties Members
+    if (-not $group.Members -or $group.Members.Count -le 0) {
+        Write-ADSecLog -Level INFO -Message "Group has no members." -Context "Pre-Windows 2000 Compatible Access"
+        return
+    }
+
+    foreach ($memberDn in $group.Members) {
+        if ($PSCmdlet.ShouldProcess($memberDn, "Remove from 'Pre-Windows 2000 Compatible Access'")) {
+            Remove-ADGroupMember -Identity $group -Members $memberDn -Confirm:$false
+            Write-ADSecLog -Level INFO -Message "Removed $memberDn from group" -Context "Pre-Windows 2000 Compatible Access"
+        }
+    }
+}
+
+function Repair-DCPrintSpooler {
+    [CmdletBinding(SupportsShouldProcess)]
+    param()
+
+    $dcs = Get-ADDomainController -Filter *
+
+    foreach ($dc in $dcs) {
+        try {
+            $svc = Get-Service -ComputerName $dc.HostName -Name Spooler -ErrorAction Stop
+        } catch {
+            continue
+        }
+
+        if ($PSCmdlet.ShouldProcess($dc.HostName, "Stop and disable Spooler")) {
+            try {
+                if ($svc.Status -ne 'Stopped') {
+                    Stop-Service -InputObject $svc -Force
+                }
+                Set-Service -InputObject $svc -StartupType Disabled
+                Write-ADSecLog -Level INFO -Message "Disabled Spooler service" -Context $dc.HostName
+            } catch {
+                Write-ADSecLog -Level ERROR -Message "Failed to modify Spooler: $($_.Exception.Message)" -Context $dc.HostName
+            }
+        }
+    }
+}
+
+function Repair-ProtectedUsersGroupMembership {
+    [CmdletBinding(SupportsShouldProcess)]
+    param()
+
+    $protectedUsers    = Get-ADGroup -Identity "Protected Users"
+    $protectedMembers  = Get-ADGroupMember -Identity $protectedUsers -Recursive
+    $domainAdmins      = Get-ADGroupMember -Identity "Domain Admins"      -Recursive | Where-Object {$_.objectClass -eq 'user'}
+    $enterpriseAdmins  = Get-ADGroupMember -Identity "Enterprise Admins"  -Recursive | Where-Object {$_.objectClass -eq 'user'}
+    $privilegedUsers   = ($domainAdmins + $enterpriseAdmins) | Select-Object -Unique
+
+    foreach ($user in $privilegedUsers) {
+        if ($protectedMembers.SamAccountName -contains $user.SamAccountName) {
+            continue
+        }
+
+        if ($PSCmdlet.ShouldProcess($user.SamAccountName, "Add to 'Protected Users'")) {
+            Add-ADGroupMember -Identity $protectedUsers -Members $user -Confirm:$false
+            Write-ADSecLog -Level INFO -Message "Added $($user.SamAccountName) to Protected Users" -Context "Protected Users"
+        }
+    }
+}
+
+function Repair-DCUnauthorizedSoftware {
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [string[]]$UnauthorizedSoftware = @("*Chrome*", "*Firefox*", "*Skype*", "*Teams*")
+    )
+
+    $dcs = Get-ADDomainController -Filter *
+
+    foreach ($dc in $dcs) {
+        try {
+            $software = Get-WmiObject -ComputerName $dc.HostName -Class Win32_Product |
+                Where-Object {
+                    $name = $_.Name
+                    $UnauthorizedSoftware | Where-Object { $name -like $_ }
+                }
+        } catch {
+            Write-ADSecLog -Level ERROR -Message "Failed to query software: $($_.Exception.Message)" -Context $dc.HostName
+            continue
+        }
+
+        foreach ($app in $software) {
+            if ($PSCmdlet.ShouldProcess("$($dc.HostName): $($app.Name)", "Uninstall")) {
+                try {
+                    $null = $app.Uninstall()
+                    Write-ADSecLog -Level INFO -Message "Requested uninstall of '$($app.Name)'" -Context $dc.HostName
+                } catch {
+                    Write-ADSecLog -Level ERROR -Message "Failed uninstall of '$($app.Name)': $($_.Exception.Message)" -Context $dc.HostName
+                }
+            }
+        }
+    }
+}
+
+function Repair-DCAnonymousLdapAccess {
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [int]$DesiredValue = 2
+    )
+
+    $dcs = Get-ADDomainController -Filter *
+
+    foreach ($dc in $dcs) {
+        try {
+            $reg = [Microsoft.Win32.RegistryKey]::OpenRemoteBaseKey('LocalMachine', $dc.HostName)
+            $key = $reg.OpenSubKey("SYSTEM\CurrentControlSet\Services\NTDS\Parameters", $true)
+            if (-not $key) { continue }
+
+            $current = $key.GetValue("LDAPServerIntegrity", 1)
+            if ($current -ge $DesiredValue) { continue }
+
+            if ($PSCmdlet.ShouldProcess($dc.HostName, "Set LDAPServerIntegrity to $DesiredValue")) {
+                $key.SetValue("LDAPServerIntegrity", $DesiredValue, [Microsoft.Win32.RegistryValueKind]::DWord)
+                Write-ADSecLog -Level INFO -Message "LDAPServerIntegrity $current -> $DesiredValue" -Context $dc.HostName
+            }
+        } catch {
+            Write-ADSecLog -Level ERROR -Message "Failed to update LDAPServerIntegrity: $($_.Exception.Message)" -Context $dc.HostName
+        }
+    }
+}
+
+function Repair-PrivilegedAccountsWithSPN {
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [switch]$ClearSpnInsteadOfDisable
+    )
+
+    $privilegedGroups = @("Domain Admins", "Enterprise Admins", "Schema Admins", "Administrators")
+    $privilegedUsers = @()
+    foreach ($group in $privilegedGroups) {
+        $privilegedUsers += Get-ADGroupMember -Identity $group -Recursive |
+            Where-Object { $_.objectClass -eq 'user' }
+    }
+    $privilegedUsers = $privilegedUsers | Select-Object -Unique
+
+    foreach ($user in $privilegedUsers) {
+        $userObj = Get-ADUser -Identity $user -Properties ServicePrincipalName, Enabled
+        if (-not $userObj.ServicePrincipalName) { continue }
+
+        if ($ClearSpnInsteadOfDisable) {
+            if ($PSCmdlet.ShouldProcess($userObj.SamAccountName, "Clear all SPNs")) {
+                Set-ADUser -Identity $userObj -ServicePrincipalNames @()
+                Write-ADSecLog -Level INFO -Message "Cleared SPNs" -Context $userObj.SamAccountName
+            }
+        } else {
+            if ($PSCmdlet.ShouldProcess($userObj.SamAccountName, "Disable privileged account with SPNs")) {
+                Disable-ADAccount -Identity $userObj
+                Write-ADSecLog -Level WARN -Message "Disabled privileged user with SPNs" -Context $userObj.SamAccountName
+            }
+        }
+    }
+}
+
+function Repair-DCSysvolPermissions {
+    [CmdletBinding(SupportsShouldProcess)]
+    param()
+
+    $dc = Get-ADDomainController -Filter * | Select-Object -First 1
+    $sysvolPath = "\\$($dc.HostName)\SYSVOL"
+
+    try {
+        $acl = Get-Acl -Path $sysvolPath
+    } catch {
+        Write-ADSecLog -Level ERROR -Message "Unable to read SYSVOL ACL: $($_.Exception.Message)" -Context $sysvolPath
+        return
+    }
+
+    $weakPermissions = $acl.Access | Where-Object {
+        $_.IdentityReference -match "Everyone|Users|Authenticated Users" -and
+        $_.FileSystemRights -match "FullControl|Modify|Write"
+    }
+
+    if (-not $weakPermissions) {
+        Write-ADSecLog -Level INFO -Message "No weak SYSVOL permissions found." -Context $sysvolPath
+        return
+    }
+
+    foreach ($ace in $weakPermissions) {
+        if ($PSCmdlet.ShouldProcess($sysvolPath, "Remove weak ACE for $($ace.IdentityReference)")) {
+            $acl.RemoveAccessRule($ace) | Out-Null
+            Write-ADSecLog -Level INFO -Message "Removed weak SYSVOL ACE: $($ace.IdentityReference)" -Context $sysvolPath
+        }
+    }
+
+    if ($PSCmdlet.ShouldProcess($sysvolPath, "Apply updated ACL")) {
+        Set-Acl -Path $sysvolPath -AclObject $acl
+        Write-ADSecLog -Level INFO -Message "Updated SYSVOL permissions." -Context $sysvolPath
+    }
+}
+
+function Repair-RODCPasswordReplicationPolicy {
+    [CmdletBinding(SupportsShouldProcess)]
+    param()
+
+    $rodcs = Get-ADDomainController -Filter {IsReadOnly -eq $true}
+    if (-not $rodcs) {
+        Write-ADSecLog -Level INFO -Message "No RODCs found." -Context "RODC PRP"
+        return
+    }
+
+    foreach ($rodc in $rodcs) {
+        try {
+            $allowed = Get-ADDomainControllerPasswordReplicationPolicy -Identity $rodc -Allowed
+        } catch {
+            Write-ADSecLog -Level ERROR -Message "Failed to get PRP allowed list: $($_.Exception.Message)" -Context $rodc.Name
+            continue
+        }
+
+        $privilegedInAllowed = $allowed | Where-Object {
+            $_.SamAccountName -match "admin|administrator"
+        }
+
+        foreach ($acct in $privilegedInAllowed) {
+            if ($PSCmdlet.ShouldProcess($rodc.Name, "Remove privileged account $($acct.SamAccountName) from Allowed PRP")) {
+                # Remove from Allowed, ensure it's in Denied is a design choice;
+                # here we only remove from allowed to avoid unintended Denied entries.
+                Set-ADDomainControllerPasswordReplicationPolicy -Identity $rodc -Account $acct -Operation Remove-Allowed
+                Write-ADSecLog -Level INFO -Message "Removed $($acct.SamAccountName) from RODC Allowed PRP" -Context $rodc.Name
+            }
+        }
+    }
+}
+
+function Repair-DCLocalAdminGroup {
+    [CmdletBinding(SupportsShouldProcess)]
+    param()
+
+    $dcs = Get-ADDomainController -Filter *
+
+    foreach ($dc in $dcs) {
+        try {
+            $admins = Get-WmiObject -ComputerName $dc.HostName -Query "SELECT * FROM Win32_GroupUser WHERE GroupComponent='Win32_Group.Domain=""$($dc.HostName)"",Name=""Administrators""" 
+        } catch {
+            Write-ADSecLog -Level ERROR -Message "Failed to query local admins: $($_.Exception.Message)" -Context $dc.HostName
+            continue
+        }
+
+        $unexpectedMembers = $admins | Where-Object {
+            $_.PartComponent -notmatch "Domain Admins|Enterprise Admins|Administrator"
+        }
+
+        foreach ($m in $unexpectedMembers) {
+            $match = [regex]::Match($m.PartComponent, 'Name=\"(.+?)\"')
+            if (-not $match.Success) { continue }
+            $memberName = $match.Groups[1].Value
+
+            if ($PSCmdlet.ShouldProcess($dc.HostName, "Remove local admin '$memberName'")) {
+                try {
+                    net localgroup Administrators "$memberName" /delete /domain | Out-Null
+                    Write-ADSecLog -Level INFO -Message "Removed $memberName from local Administrators" -Context $dc.HostName
+                } catch {
+                    Write-ADSecLog -Level ERROR -Message "Failed to remove ($memberName): $($_.Exception.Message)" -Context $dc.HostName
+                }
+            }
+        }
+    }
+}
+
+function Repair-DCRemoteAccessServices {
+    [CmdletBinding(SupportsShouldProcess)]
+    param()
+
+    $dcs = Get-ADDomainController -Filter *
+    $dangerousServices = @("RemoteRegistry", "RemoteAccess", "TermService")
+
+    foreach ($dc in $dcs) {
+        foreach ($service in $dangerousServices) {
+            try {
+                $svc = Get-Service -ComputerName $dc.HostName -Name $service -ErrorAction SilentlyContinue
+                if (-not $svc -or $svc.Status -ne 'Running') { continue }
+            } catch {
+                continue
+            }
+
+            if ($PSCmdlet.ShouldProcess($dc.HostName, "Stop and disable $service")) {
+                try {
+                    Stop-Service -InputObject $svc -Force
+                    Set-Service -InputObject $svc -StartupType Disabled
+                    Write-ADSecLog -Level INFO -Message "Disabled $service" -Context $dc.HostName
+                } catch {
+                    Write-ADSecLog -Level ERROR -Message "Failed to modify ($service): $($_.Exception.Message)" -Context $dc.HostName
+                }
+            }
+        }
+    }
+}
+
+function Repair-DCsmbv1 {
+    [CmdletBinding(SupportsShouldProcess)]
+    param()
+
+    $dcs = Get-ADDomainController -Filter *
+
+    foreach ($dc in $dcs) {
+        try {
+            $cfg = Get-SmbServerConfiguration -CimSession $dc.HostName
+        } catch {
+            Write-ADSecLog -Level ERROR -Message "Failed to query SMB configuration: $($_.Exception.Message)" -Context $dc.HostName
+            continue
+        }
+
+        if (-not $cfg.EnableSMB1Protocol) { continue }
+
+        if ($PSCmdlet.ShouldProcess($dc.HostName, "Disable SMBv1")) {
+            try {
+                Set-SmbServerConfiguration -CimSession $dc.HostName -EnableSMB1Protocol $false -Force
+                Write-ADSecLog -Level INFO -Message "Disabled SMBv1" -Context $dc.HostName
+            } catch {
+                Write-ADSecLog -Level ERROR -Message "Failed to disable SMBv1: $($_.Exception.Message)" -Context $dc.HostName
+            }
+        }
+    }
+}
+
+function Repair-DCFirewallStatus {
+    [CmdletBinding(SupportsShouldProcess)]
+    param()
+
+    $dcs = Get-ADDomainController -Filter *
+
+    foreach ($dc in $dcs) {
+        try {
+            $profiles = Get-NetFirewallProfile -CimSession $dc.HostName
+        } catch {
+            Write-ADSecLog -Level ERROR -Message "Failed to query firewall profile: $($_.Exception.Message)" -Context $dc.HostName
+            continue
+        }
+
+        foreach ($profile in $profiles) {
+            if ($profile.Enabled) { continue }
+
+            if ($PSCmdlet.ShouldProcess($dc.HostName, "Enable firewall profile $($profile.Name)")) {
+                try {
+                    Set-NetFirewallProfile -CimSession $dc.HostName -Name $profile.Name -Enabled True
+                    Write-ADSecLog -Level INFO -Message "Enabled firewall profile $($profile.Name)" -Context $dc.HostName
+                } catch {
+                    Write-ADSecLog -Level ERROR -Message "Failed to enable profile $($profile.Name): $($_.Exception.Message)" -Context $dc.HostName
+                }
+            }
+        }
+    }
+}
+
+function Repair-BitLockerOnDCs {
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [ValidateSet('Tpm','Password','RecoveryPassword','TpmPin','TpmKey')]
+        [string]$ProtectorType = 'Tpm',
+
+        [switch]$EnableIfNotPresent
+    )
+
+    $dcs = Get-ADDomainController -Filter *
+
+    foreach ($dc in $dcs) {
+        try {
+            $bitlocker = Get-BitLockerVolume -CimSession $dc.HostName | Where-Object {$_.VolumeType -eq 'OperatingSystem'}
+        } catch {
+            Write-ADSecLog -Level ERROR -Message "Failed to query BitLocker: $($_.Exception.Message)" -Context $dc.HostName
+            continue
+        }
+
+        if (-not $bitlocker) { continue }
+
+        if ($bitlocker.ProtectionStatus -eq 'On') {
+            Write-ADSecLog -Level INFO -Message "BitLocker already enabled" -Context $dc.HostName
+            continue
+        }
+
+        if (-not $EnableIfNotPresent) {
+            Write-ADSecLog -Level WARN -Message "BitLocker is OFF; rerun with -EnableIfNotPresent to enable." -Context $dc.HostName
+            continue
+        }
+
+        if ($PSCmdlet.ShouldProcess($dc.HostName, "Enable BitLocker on OS volume")) {
+            try {
+                switch ($ProtectorType) {
+                    'Tpm' {
+                        Enable-BitLocker -MountPoint $bitlocker.MountPoint -CimSession $dc.HostName -TpmProtector
+                    }
+                    default {
+                        Enable-BitLocker -MountPoint $bitlocker.MountPoint -CimSession $dc.HostName -TpmProtector
+                    }
+                }
+                Write-ADSecLog -Level INFO -Message "BitLocker enable initiated" -Context $dc.HostName
+            } catch {
+                Write-ADSecLog -Level ERROR -Message "Failed to enable BitLocker: $($_.Exception.Message)" -Context $dc.HostName
+            }
+        }
+    }
+}
+
+function Repair-NullSessionAccess {
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [int]$DesiredValue = 1
+    )
+
+    $dcs = Get-ADDomainController -Filter *
+
+    foreach ($dc in $dcs) {
+        try {
+            $reg = [Microsoft.Win32.RegistryKey]::OpenRemoteBaseKey('LocalMachine', $dc.HostName)
+            $key = $reg.OpenSubKey("SYSTEM\CurrentControlSet\Control\Lsa", $true)
+            if (-not $key) { continue }
+
+            $currentRestrictAnonymous   = $key.GetValue("RestrictAnonymous", 0)
+            $currentRestrictAnonymousSA = $key.GetValue("RestrictAnonymousSAM", 0)
+
+            if ($PSCmdlet.ShouldProcess($dc.HostName, "Set RestrictAnonymous/RestrictAnonymousSAM to $DesiredValue")) {
+                if ($currentRestrictAnonymous   -lt $DesiredValue) {
+                    $key.SetValue("RestrictAnonymous",   $DesiredValue, [Microsoft.Win32.RegistryValueKind]::DWord)
+                }
+                if ($currentRestrictAnonymousSA -lt $DesiredValue) {
+                    $key.SetValue("RestrictAnonymousSAM",$DesiredValue, [Microsoft.Win32.RegistryValueKind]::DWord)
+                }
+                Write-ADSecLog -Level INFO -Message "Updated null session keys" -Context $dc.HostName
+            }
+        } catch {
+            Write-ADSecLog -Level ERROR -Message "Failed to update null session settings: $($_.Exception.Message)" -Context $dc.HostName
+        }
+    }
+}
+
+function Repair-LLMNRAndNBTNS {
+    [CmdletBinding(SupportsShouldProcess)]
+    param()
+
+    $dcs = Get-ADDomainController -Filter *
+
+    foreach ($dc in $dcs) {
+        try {
+            $reg = [Microsoft.Win32.RegistryKey]::OpenRemoteBaseKey('LocalMachine', $dc.HostName)
+            $key = $reg.CreateSubKey("SOFTWARE\Policies\Microsoft\Windows NT\DNSClient")
+            $current = $key.GetValue("EnableMulticast", 1)
+        } catch {
+            Write-ADSecLog -Level ERROR -Message "Failed to access DNSClient key: $($_.Exception.Message)" -Context $dc.HostName
+            continue
+        }
+
+        if ($current -eq 0) { continue }
+
+        if ($PSCmdlet.ShouldProcess($dc.HostName, "Set EnableMulticast=0")) {
+            $key.SetValue("EnableMulticast", 0, [Microsoft.Win32.RegistryValueKind]::DWord)
+            Write-ADSecLog -Level INFO -Message "Disabled LLMNR (EnableMulticast=0)" -Context $dc.HostName
+        }
+
+        # NetBIOS disabling is better done via GPO/DHCP/NIC config; log guidance only.
+        Write-ADSecLog -Level INFO -Message "Review NetBIOS settings via GPO/NIC; not auto-changed here." -Context $dc.HostName
+    }
+}
+
+function Repair-PrivilegedGroupsNesting {
+    [CmdletBinding(SupportsShouldProcess)]
+    param()
+
+    $privilegedGroups = @("Domain Admins", "Enterprise Admins", "Schema Admins")
+
+    foreach ($group in $privilegedGroups) {
+        $members = Get-ADGroupMember -Identity $group
+        $nestedGroups = $members | Where-Object {$_.objectClass -eq 'group'}
+
+        foreach ($nested in $nestedGroups) {
+            if ($PSCmdlet.ShouldProcess($group, "Remove nested group $($nested.SamAccountName)")) {
+                try {
+                    Remove-ADGroupMember -Identity $group -Members $nested -Confirm:$false
+                    Write-ADSecLog -Level INFO -Message "Removed nested group $($nested.SamAccountName)" -Context $group
+                } catch {
+                    Write-ADSecLog -Level ERROR -Message "Failed to remove nested group: $($_.Exception.Message)" -Context $group
+                }
+            }
+        }
+    }
+}
+
+function Repair-DomainObjectQuota {
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [int]$DesiredQuota = 0
+    )
+
+    $domain = Get-ADDomain
+    if ($domain.MachineAccountQuota -eq $DesiredQuota) {
+        Write-ADSecLog -Level INFO -Message "MachineAccountQuota already $DesiredQuota" -Context $domain.DNSRoot
+        return
+    }
+
+    if ($PSCmdlet.ShouldProcess($domain.DNSRoot, "Set MachineAccountQuota to $DesiredQuota")) {
+        Set-ADDomain -Identity $domain.DNSRoot -Replace @{ "ms-DS-MachineAccountQuota" = $DesiredQuota }
+        Write-ADSecLog -Level INFO -Message "Set MachineAccountQuota to $DesiredQuota" -Context $domain.DNSRoot
+    }
+}
+
+function Repair-GPOBackups {
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [string]$BackupPath = "\\$((Get-ADDomain).PDCEmulator)\GPOBackups"
+    )
+
+    if (-not (Test-Path $BackupPath)) {
+        if ($PSCmdlet.ShouldProcess($BackupPath, "Create GPO backup root path")) {
+            New-Item -ItemType Directory -Path $BackupPath -Force | Out-Null
+            Write-ADSecLog -Level INFO -Message "Created GPO backup path" -Context $BackupPath
+        }
+    }
+
+    # This function does not schedule backups; it just ensures the path exists.
+    Write-ADSecLog -Level INFO -Message "Ensure scheduled task/backup job uses $BackupPath for regular GPO backups." -Context "GPO Backups"
+}
+
+function Repair-AdminAccountIsolation {
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [string]$UserSuffix = ".user"
+    )
+
+    $admins = Get-ADGroupMember -Identity "Domain Admins" -Recursive | Where-Object {$_.objectClass -eq 'user'}
+
+    foreach ($admin in $admins) {
+        $user = Get-ADUser -Identity $admin -Properties LastLogonDate, LogonCount
+        if (-not $user.LastLogonDate -or $user.LastLogonDate -lt (Get-Date).AddDays(-7)) { continue }
+
+        $candidateSam = ($user.SamAccountName + $UserSuffix)
+        $nonAdmin = Get-ADUser -Filter "SamAccountName -eq '$candidateSam'" -ErrorAction SilentlyContinue
+
+        if ($nonAdmin) {
+            Write-ADSecLog -Level INFO -Message "Admin $($user.SamAccountName) already has user account $candidateSam" -Context "Admin Isolation"
+            continue
+        }
+
+        if ($PSCmdlet.ShouldProcess($user.SamAccountName, "Create matching non-admin user account '$candidateSam'")) {
+            try {
+                $ou = (Get-ADDomain).UsersContainer
+                New-ADUser -Name $user.Name -SamAccountName $candidateSam -Path $ou -Enabled:$false
+                Write-ADSecLog -Level INFO -Message "Created placeholder user account $candidateSam (disabled, needs configuration)" -Context "Admin Isolation"
+            } catch {
+                Write-ADSecLog -Level ERROR -Message "Failed to create user account ($candidateSam): $($_.Exception.Message)" -Context "Admin Isolation"
+            }
+        }
+    }
+}
+
+function Repair-ServiceAccountPasswords {
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [int]$MaxAgeDays = 365
+    )
+
+    $serviceAccounts = Get-ADUser -Filter {ServicePrincipalName -like "*"} -Properties PasswordLastSet, PasswordNeverExpires, ServicePrincipalName
+
+    $weakAccounts = $serviceAccounts | Where-Object {
+        $_.PasswordNeverExpires -or 
+        ((Get-Date) - $_.PasswordLastSet).Days -gt $MaxAgeDays
+    }
+
+    foreach ($acct in $weakAccounts) {
+        if ($PSCmdlet.ShouldProcess($acct.SamAccountName, "Flag service account for password remediation")) {
+            # We won't automatically reset passwords (can break services) – log guidance only.
+            Write-ADSecLog -Level WARN -Message "Service account password stale or never expires. Consider gMSA or rotation." -Context $acct.SamAccountName
+        }
+    }
+}
+
+function Repair-LAPSDeployment {
+    [CmdletBinding(SupportsShouldProcess)]
+    param()
+
+    # LAPS is typically deployed via schema extension + GPO + client.
+    # We only log guidance here to avoid half-configuring LAPS.
+    Write-ADSecLog -Level INFO -Message "LAPS remediation is not automatic; deploy Windows LAPS via schema update + GPO." -Context "LAPS"
+}
 
 # MAIN EXECUTION FUNCTIONS (existing definitions kept, just making sure we call all new checks)
 
@@ -2962,6 +3663,52 @@ function Invoke-ADSecurityAudit {
     }
 
     $allResults
+}
+
+function Invoke-ADSecurityRemediation {
+    <#
+    .SYNOPSIS
+        Run remediation for a given check name.
+    .PARAMETER CheckName
+        The CheckName string from Test-* output (e.g. 'SMBv1 Protocol Enabled').
+    #>
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [Parameter(Mandatory)]
+        [string]$CheckName
+    )
+
+    switch ($CheckName) {
+        "KRBTGT Password Age"                 { Invoke-KrbtgtPasswordRotation }
+        "AdminSDHolder ACL"                   { Repair-AdminSDHolderAcl }
+        "Unconstrained Delegation"            { Repair-UnconstrainedDelegation }
+        "DC AutoLogon Registry"               { Repair-DCAutoLogon }
+        "NTLM Authentication Level"           { Repair-NTLMAuthentication }
+        "Pre-Windows 2000 Compatible Access"  { Repair-PreWindows2000CompatibleAccess }
+        "DC Print Spooler Service"            { Repair-DCPrintSpooler }
+        "Protected Users Group Membership"    { Repair-ProtectedUsersGroupMembership }
+        "DC Unauthorized Software"            { Repair-DCUnauthorizedSoftware }
+        "DC Anonymous LDAP Access"           { Repair-DCAnonymousLdapAccess }
+        "Privileged Accounts with SPNs"      { Repair-PrivilegedAccountsWithSPN }
+        "SYSVOL Permissions"                 { Repair-DCSysvolPermissions }
+        "RODC Password Replication Policy"   { Repair-RODCPasswordReplicationPolicy }
+        "DC Local Administrators Group"      { Repair-DCLocalAdminGroup }
+        "DC Remote Access Services"          { Repair-DCRemoteAccessServices }
+        "SMBv1 Protocol Enabled"             { Repair-DCsmbv1 }
+        "DC Windows Firewall Status"         { Repair-DCFirewallStatus }
+        "BitLocker on Domain Controllers"    { Repair-BitLockerOnDCs }
+        "Null Session Access"                { Repair-NullSessionAccess }
+        "LLMNR and NetBIOS"                  { Repair-LLMNRAndNBTNS }
+        "Privileged Groups Nesting"          { Repair-PrivilegedGroupsNesting }
+        "Domain Object Creation Quota"       { Repair-DomainObjectQuota }
+        "GPO Backups"                        { Repair-GPOBackups }
+        "Admin Account Isolation"            { Repair-AdminAccountIsolation }
+        "Service Account Password Policy"    { Repair-ServiceAccountPasswords }
+        "LAPS Deployment"                    { Repair-LAPSDeployment }
+        default {
+            Write-ADSecLog -Level WARN -Message "No remediation function defined for '$CheckName'." -Context "Invoke-ADSecurityRemediation"
+        }
+    }
 }
 
 function Get-ADSecurityScore {
@@ -3172,7 +3919,15 @@ Export-ModuleMember -Function @(
     'Test-DomainFunctionalLevel',
     'Test-ADBackupAge',
     'Test-CompromisedPasswordCheck',
-    'Test-EventLogConfiguration',
+    'Test-EventLogConfiguration'
+    
+    
+    'Set-ADSecLogPath',
+    'Write-ADSecLog',
+    'Invoke-KrbtgtPasswordRotation',
+    'Repair-*',
+    'Invoke-ADSecurityTests',
+    'Invoke-ADSecurityRemediation',
 
     # Main
     'Invoke-ADSecurityAudit',
