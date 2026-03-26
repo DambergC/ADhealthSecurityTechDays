@@ -1104,7 +1104,7 @@ function Test-DNSSecurity {
 }
 
 # ============================================================================
-# MEDIUM SEVERITY RISKS (40 checks)
+# MEDIUM SEVERITY RISKS (33 checks)
 # ============================================================================
 
 function Test-StaleComputerAccounts {
@@ -2086,7 +2086,7 @@ function Test-UsersWithManyGroupMemberships {
 }
 
 # ============================================================================
-# LOW SEVERITY RISKS (10 checks)
+# LOW SEVERITY RISKS (15 checks)
 # ============================================================================
 
 
