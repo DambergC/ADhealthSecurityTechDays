@@ -2085,6 +2085,11 @@ function Test-UsersWithManyGroupMemberships {
     }
 }
 
+# ============================================================================
+# LOW SEVERITY RISKS (10 checks)
+# ============================================================================
+
+
 function Test-DefaultAdministrator {
     <#
     .SYNOPSIS
